@@ -1,0 +1,63 @@
+{
+  "manifest_version": 3,
+  "name": "Liquid Glass Tab",
+  "version": "1.0.0",
+  "description": "An Apple-style liquid-glass new tab: bookmark dock, weather, news, a Spotify player with visualizer, and synced lyrics.",
+  "minimum_chrome_version": "116",
+
+  "chrome_url_overrides": { "newtab": "newtab.html" },
+
+  "content_security_policy": {
+    "extension_pages": "default-src 'self'; script-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' data: blob: https:; connect-src 'self' https:; font-src 'self'"
+  },
+
+  "background": { "service_worker": "background.js", "type": "module" },
+
+  "action": { "default_title": "Liquid Glass Tab" },
+
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+
+  "permissions": [
+    "bookmarks",
+    "storage",
+    "unlimitedStorage",
+    "favicon",
+    "topSites",
+    "history",
+    "tabs",
+    "alarms",
+    "identity",
+    "tabCapture"
+  ],
+
+  "host_permissions": [
+    "https://api.spotify.com/*",
+    "https://accounts.spotify.com/*",
+    "https://api.open-meteo.com/*",
+    "https://geocoding-api.open-meteo.com/*",
+    "https://lrclib.net/*",
+    "https://ipapi.co/*",
+    "https://ipwho.is/*",
+    "https://duckduckgo.com/*",
+    "https://api.coingecko.com/*",
+    "https://feeds.bbci.co.uk/*",
+    "https://feeds.arstechnica.com/*",
+    "https://hnrss.org/*",
+    "https://www.theverge.com/*",
+    "https://rss.nytimes.com/*"
+  ],
+
+  "optional_host_permissions": ["*://*/*"],
+
+  "web_accessible_resources": [
+    {
+      "resources": ["_favicon/*"],
+      "matches": ["<all_urls>"],
+      "extension_ids": ["*"]
+    }
+  ]
+}

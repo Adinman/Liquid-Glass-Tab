@@ -1,0 +1,387 @@
+/* ---------- favicon fallback ----------
+   Shown when Chrome has no cached icon for a site (it only keeps icons for
+   pages you've actually visited). Better than a broken-image glyph. */
+.letter {
+  display: grid; place-items: center;
+  border-radius: 26%; font-weight: 600; color: var(--text);
+  background: linear-gradient(150deg, hsl(0 0% 100% / .26), hsl(0 0% 100% / .10));
+  box-shadow: inset 0 1px 0 hsl(0 0% 100% / .35);
+  text-shadow: 0 1px 2px rgba(0,0,0,.35);
+}
+.dock-item .letter { font-size: 20px; }
+.fly-letter   { width: 26px; height: 26px; font-size: 13px; border-radius: 8px; }
+.speed-letter { width: 26px; height: 26px; font-size: 13px; border-radius: 8px; }
+.p-item .letter { font-size: 10px; border-radius: 5px; }
+
+/* ---------- generic controls ---------- */
+.pill {
+  padding: 6px 12px; border-radius: 999px; font-size: 12.5px; color: var(--text-dim);
+  background: hsl(0 0% 100% / .08); border: 1px solid hsl(0 0% 100% / .10);
+  transition: background .18s, color .18s;
+}
+.pill:hover { background: hsl(0 0% 100% / .16); color: var(--text); }
+.pill.on { background: color-mix(in srgb, var(--accent) 42%, transparent); color: var(--text); }
+.row { display: flex; align-items: center; gap: 10px; }
+.muted { color: var(--text-dim); }
+.faint { color: var(--text-faint); }
+.tabular { font-variant-numeric: tabular-nums; }
+.scroll { overflow-y: auto; scrollbar-width: thin; scrollbar-color: hsl(0 0% 100% / .22) transparent; }
+.scroll::-webkit-scrollbar { width: 7px; }
+.scroll::-webkit-scrollbar-thumb { background: hsl(0 0% 100% / .2); border-radius: 4px; }
+
+/* ---------- clock ---------- */
+.w-clock { text-align: center; padding: 22px 30px; }
+.w-clock .time { font-size: var(--clock-size, 76px); font-weight: 200; letter-spacing: -.03em; line-height: 1; }
+.w-clock .time .sec { font-size: .38em; opacity: .55; margin-left: .12em; font-weight: 300; }
+.w-clock .time .ampm { font-size: .3em; opacity: .6; margin-left: .18em; font-weight: 400; }
+.w-clock .date { margin-top: 10px; font-size: 15px; color: var(--text-dim); }
+.w-clock .greet { margin-top: 4px; font-size: 19px; font-weight: 300; }
+
+/* ---------- search ---------- */
+.w-search { padding: 0; width: 560px; overflow: visible; }
+.w-search form { display: flex; align-items: center; gap: 10px; padding: 13px 18px; }
+.w-search input {
+  flex: 1; background: none; border: 0; outline: 0; font-size: 16.5px; user-select: text;
+}
+.w-search input::placeholder { color: var(--text-faint); }
+.w-search .engine { font-size: 12px; }
+.sugg { padding: 6px; margin-top: 8px; position: absolute; left: 0; right: 0; top: 100%; }
+.sugg .s-item { padding: 9px 14px; border-radius: 12px; font-size: 14px; cursor: pointer; }
+.sugg .s-item.sel, .sugg .s-item:hover { background: hsl(0 0% 100% / .15); }
+
+/* ---------- weather ---------- */
+.w-weather { width: 300px; }
+.wx-now { display: flex; align-items: center; gap: 14px; }
+.wx-icon { font-size: 42px; line-height: 1; }
+.wx-temp { font-size: 40px; font-weight: 250; letter-spacing: -.02em; }
+.wx-desc { font-size: 13.5px; color: var(--text-dim); }
+.wx-place { font-size: 12px; color: var(--text-faint); }
+.wx-stats { display: flex; gap: 14px; margin-top: 12px; font-size: 12px; color: var(--text-dim); flex-wrap: wrap; }
+.wx-hours { display: flex; gap: 4px; margin-top: 14px; overflow-x: auto; padding-bottom: 4px; }
+.wx-hours .h { text-align: center; font-size: 11px; min-width: 42px; color: var(--text-dim); }
+.wx-hours .h b { display: block; font-size: 13px; color: var(--text); font-weight: 500; margin-top: 3px; }
+.wx-days { margin-top: 12px; border-top: 1px solid hsl(0 0% 100% / .1); padding-top: 10px; }
+.wx-days .d { display: flex; align-items: center; gap: 10px; font-size: 13px; padding: 3px 0; }
+.wx-days .d .n { width: 38px; color: var(--text-dim); }
+.wx-days .d .bar { flex: 1; height: 4px; border-radius: 2px; background: hsl(0 0% 100% / .12); position: relative; }
+.wx-days .d .bar i { position: absolute; height: 100%; border-radius: 2px;
+  background: linear-gradient(90deg, #6fd0ff, #ffd166, #ff7b6b); }
+
+/* ---------- news ---------- */
+.w-news { width: 380px; }
+.news-list { max-height: 260px; }
+.news-item { display: block; padding: 9px 0; border-bottom: 1px solid hsl(0 0% 100% / .07); cursor: pointer; }
+.news-item:last-child { border-bottom: 0; }
+.news-item .t { font-size: 13.5px; line-height: 1.35; }
+.news-item .m { font-size: 11px; color: var(--text-faint); margin-top: 3px; }
+.news-item:hover .t { color: var(--accent); }
+.src-tabs { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 8px; }
+.src-tabs .pill { padding: 4px 10px; font-size: 11px; }
+
+/* ---------- spotify ---------- */
+.w-spotify { width: 360px; }
+.sp-head { display: flex; gap: 14px; align-items: center; }
+.sp-art { width: 74px; height: 74px; border-radius: 14px; object-fit: cover; flex: 0 0 auto;
+  box-shadow: 0 10px 26px rgba(0,0,0,.45); background: hsl(0 0% 100% / .08); }
+.sp-meta { min-width: 0; flex: 1; }
+.sp-title { font-size: 15.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sp-artist { font-size: 12.5px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sp-device { font-size: 11px; color: var(--text-faint); margin-top: 4px; }
+.sp-seek { margin-top: 12px; display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-faint); }
+.sp-bar { flex: 1; height: 4px; border-radius: 3px; background: hsl(0 0% 100% / .16); cursor: pointer; position: relative; }
+.sp-bar i { position: absolute; inset: 0 auto 0 0; border-radius: 3px; background: var(--accent); }
+.sp-bar::after { content: ""; position: absolute; inset: -7px 0; }
+.sp-ctrls { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 10px; }
+.sp-ctrls button { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center;
+  color: var(--text-dim); font-size: 15px; transition: background .16s, color .16s, transform .16s; }
+.sp-ctrls button:hover { background: hsl(0 0% 100% / .14); color: var(--text); }
+.sp-ctrls button:active { transform: scale(.9); }
+.sp-ctrls .play { width: 44px; height: 44px; background: hsl(0 0% 100% / .16); color: var(--text); font-size: 17px; }
+.sp-ctrls .on { color: var(--accent); }
+/* Every control is an SVG, so grid centres each one on the button's midline
+   and the row is level by construction. This deliberately carries no nudge:
+   one was needed only while glyphs and icons were mixed, because glyph ink
+   hangs below the line box centre by a different amount per Unicode block
+   (measured 1.5px for ⏮/⏭ against 0.0px for ♡). */
+.sp-ctrls svg { display: block; }
+.sp-vol { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.sp-vol input { flex: 1; }
+.sp-connect { text-align: center; padding: 8px 0 4px; }
+.sp-connect p { font-size: 12.5px; color: var(--text-dim); margin: 0 0 10px; line-height: 1.5; }
+input[type=range] { -webkit-appearance: none; height: 4px; border-radius: 3px;
+  background: hsl(0 0% 100% / .18); outline: none; }
+input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px;
+  border-radius: 50%; background: #fff; box-shadow: 0 2px 6px rgba(0,0,0,.4); cursor: pointer; }
+
+/* ---------- visualizer ----------
+   A "bare" widget: no glass panel, no header, no padding — just the canvas.
+   Its controls live in Settings → Music. */
+.widget.bare {
+  padding: 0; background: none; box-shadow: none; border-radius: 0;
+}
+:root[data-edit="on"] .widget.bare {
+  border-radius: 12px;
+  box-shadow: 0 0 0 1.5px var(--accent);
+}
+.w-viz { width: 440px; height: 130px; }
+.w-viz[data-mode="radial"] { width: 250px; height: 250px; }
+.w-viz canvas { display: block; width: 100%; height: 100%; }
+
+/* ---------- lyrics ---------- */
+.w-lyrics { width: 340px; }
+.lyr-box { height: 190px; overflow: hidden; position: relative; mask-image:
+  linear-gradient(transparent, #000 22%, #000 74%, transparent); }
+.lyr-scroll { transition: transform .45s cubic-bezier(.2,.9,.25,1); }
+.lyr-line { font-size: 15px; line-height: 1.45; padding: 5px 0; color: var(--text-faint);
+  transition: color .3s, filter .3s, transform .3s; filter: blur(.6px); }
+.lyr-line.active { color: var(--text); font-weight: 600; filter: none; transform: scale(1.03); transform-origin: left; }
+.lyr-line.near { color: var(--text-dim); filter: none; }
+.lyr-empty { font-size: 13px; color: var(--text-faint); text-align: center; padding-top: 60px; }
+
+/* ---------- notes / tasks ---------- */
+/* Notes and the to-do input get the same dark, near-opaque fill as .dp-field:
+   over a translucent field the OS text cursor has nothing to contrast against
+   and reads as an invisible mouse pointer. */
+.w-notes textarea, .task-add {
+  background: hsl(228 24% 9% / .62);
+  border: 1px solid hsl(0 0% 100% / .16);
+  color: var(--text);
+}
+.w-notes textarea:focus, .task-add:focus {
+  background: hsl(228 24% 9% / .78);
+  border-color: var(--accent);
+}
+:root[data-scheme="light"] .w-notes textarea,
+:root[data-scheme="light"] .task-add { background: hsl(0 0% 100% / .74); }
+:root[data-scheme="light"] .w-notes textarea:focus,
+:root[data-scheme="light"] .task-add:focus { background: hsl(0 0% 100% / .9); }
+
+.w-notes { width: 300px; }
+.w-notes textarea {
+  width: 100%; height: 160px; resize: vertical; outline: 0;
+  border-radius: 10px; padding: 9px 11px;
+  font-size: 13.5px; line-height: 1.6; user-select: text; font-family: var(--font);
+}
+.w-tasks { width: 290px; }
+.task-add { width: 100%; outline: 0;
+  border-radius: 10px; padding: 8px 11px; font-size: 13px; user-select: text; margin-bottom: 8px; }
+.task { display: flex; align-items: flex-start; gap: 9px; padding: 5px 0; font-size: 13.5px; }
+.task .box { width: 17px; height: 17px; flex: 0 0 auto; border-radius: 5px; margin-top: 1px;
+  border: 1.5px solid hsl(0 0% 100% / .35); display: grid; place-items: center; font-size: 11px; cursor: pointer; }
+.task.done .box { background: var(--accent); border-color: transparent; color: #06121c; }
+.task.done .txt { text-decoration: line-through; color: var(--text-faint); }
+.task .txt { flex: 1; user-select: text; }
+.task .del { opacity: 0; color: var(--text-faint); }
+.task:hover .del { opacity: 1; }
+
+/* ---------- pomodoro ---------- */
+.w-pomo { width: 230px; text-align: center; }
+.pomo-ring { width: 140px; height: 140px; margin: 4px auto 8px; position: relative; }
+.pomo-ring svg { transform: rotate(-90deg); }
+.pomo-ring circle { fill: none; stroke-width: 7; stroke-linecap: round; }
+.pomo-ring .bg { stroke: hsl(0 0% 100% / .12); }
+.pomo-ring .fg { stroke: var(--accent); transition: stroke-dashoffset .9s linear; }
+.pomo-ring .lbl { position: absolute; inset: 0; display: grid; place-items: center;
+  font-size: 30px; font-weight: 250; letter-spacing: -.02em; }
+.pomo-mode { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-faint); }
+
+/* ---------- misc widgets ---------- */
+.w-quote { width: 330px; }
+/* Reserve two lines — the measured maximum for the quote pool at this width —
+   so cycling between a one- and two-line quote doesn't resize the panel and
+   make it jump. A longer quote still wraps freely; clampPanel handles that. */
+.w-quote .q { font-size: 15px; line-height: 1.55; font-weight: 300; font-style: italic;
+  min-height: calc(1.55em * 2); }
+.w-quote .a { font-size: 12px; color: var(--text-faint); margin-top: 8px; }
+
+.w-speed { width: 340px; }
+.speed-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.speed-item { display: grid; place-items: center; gap: 6px; padding: 10px 4px; border-radius: 14px;
+  font-size: 10.5px; color: var(--text-dim); text-align: center; }
+.speed-item img { width: 26px; height: 26px; }
+.speed-item span { width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.speed-item:hover { background: hsl(0 0% 100% / .13); color: var(--text); }
+
+.w-world { width: 230px; }
+.wc-row { display: flex; justify-content: space-between; font-size: 13.5px; padding: 4px 0; }
+.wc-row .z { color: var(--text-dim); }
+
+.w-count { width: 240px; text-align: center; }
+.count-num { font-size: 44px; font-weight: 200; letter-spacing: -.02em; }
+.count-lbl { font-size: 13px; color: var(--text-dim); margin-top: 2px; }
+/* Out of the layout flow on purpose. Inline, opening this grew the panel, which
+   tripped the off-screen clamp and shoved the whole widget upward — the numbers
+   jumped every time you clicked ✎. Absolute keeps the widget's height fixed, so
+   it expands downward and nothing moves. */
+.count-edit {
+  position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 3;
+  padding: 12px 14px; border-radius: 18px;
+  background: hsl(228 24% 9% / .86);
+  border: 1px solid hsl(0 0% 100% / .14);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(20px) saturate(160%);
+}
+/* Flip above when there isn't room below, so it never hangs off the screen. */
+.count-edit.above { top: auto; bottom: calc(100% + 6px); }
+.widget.editing { z-index: 5; }        /* float over neighbouring widgets */
+.count-edit .chips { justify-content: center; margin-bottom: 4px; }
+.count-field {
+  width: 100%; margin-top: 6px; padding: 7px 10px; font-size: 12.5px;
+  border-radius: 9px; outline: 0; user-select: text; font-family: var(--font);
+  background: hsl(228 24% 9% / .62); border: 1px solid hsl(0 0% 100% / .16);
+  color: var(--text);
+}
+.count-field:focus { border-color: var(--accent); background: hsl(228 24% 9% / .78); }
+select.count-field { cursor: pointer; }
+select.count-field option { background: #1a1d28; color: #fff; }
+:root[data-scheme="light"] .count-field { background: hsl(0 0% 100% / .74); }
+
+.w-crypto { width: 250px; }
+.cr-row { display: flex; align-items: center; justify-content: space-between; font-size: 13.5px; padding: 5px 0; }
+.cr-row .up { color: #5ee2a0; } .cr-row .dn { color: #ff7a85; }
+
+.w-cal { width: 270px; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; text-align: center; font-size: 12px; }
+.cal-grid .hd { color: var(--text-faint); font-size: 10px; padding-bottom: 4px; }
+.cal-grid .dy { padding: 5px 0; border-radius: 8px; color: var(--text-dim); }
+.cal-grid .dy.today { background: var(--accent); color: #06121c; font-weight: 600; }
+.cal-grid .dy.out { color: var(--text-faint); opacity: .45; }
+
+.w-battery { width: 200px; }
+.bat-shell { height: 10px; border-radius: 5px; background: hsl(0 0% 100% / .14); overflow: hidden; margin-top: 8px; }
+.bat-shell i { display: block; height: 100%; background: linear-gradient(90deg, #5ee2a0, #7cc6ff); }
+
+/* ---------- HUD ---------- */
+#hud { position: fixed; top: 16px; right: 16px; z-index: 35; display: flex; gap: 8px; opacity: .35; transition: opacity .25s; }
+#hud:hover { opacity: 1; }
+.hud-btn { --radius: 12px; width: 38px; height: 38px; display: grid; place-items: center; font-size: 16px; color: var(--text-dim); }
+.hud-btn:hover { color: var(--text); }
+:root[data-edit="on"] #btn-edit { color: var(--accent); }
+
+/* ---------- command palette ---------- */
+/* No backdrop-filter on the overlay: it would become a backdrop root and the
+   palette's own glass would have nothing left to refract. */
+#palette-overlay { position: fixed; inset: 0; z-index: 50; display: grid; place-items: start center;
+  padding-top: 14vh; background: rgba(6,8,14,.5); animation: fade .18s ease; }
+@keyframes fade { from { opacity: 0; } }
+#palette { width: min(640px, 92vw); padding: 8px; animation: panel-in .28s cubic-bezier(.2,.9,.25,1); }
+#palette-input { width: 100%; background: none; border: 0; outline: 0; padding: 14px 16px;
+  font-size: 17px; user-select: text; }
+#palette-results { max-height: 46vh; overflow-y: auto; padding: 4px; }
+.p-item { display: flex; align-items: center; gap: 11px; padding: 9px 12px; border-radius: 12px; cursor: pointer; }
+.p-item.sel { background: hsl(0 0% 100% / .16); }
+.p-item img, .p-item .pi { width: 18px; height: 18px; flex: 0 0 auto; display: grid; place-items: center; font-size: 14px; }
+.p-item .pt { flex: 1; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.p-item .pu { font-size: 11px; color: var(--text-faint); max-width: 42%; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.p-item .tag { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-faint); }
+#palette-hint { padding: 8px 14px 6px; font-size: 11px; color: var(--text-faint); border-top: 1px solid hsl(0 0% 100% / .08); }
+kbd { background: hsl(0 0% 100% / .12); border-radius: 4px; padding: 1px 5px; font-size: 10px; font-family: inherit; }
+
+/* Private-search toggle in the search bar. Dim at rest, accent when armed, so
+   "will this search go to a private window?" is answerable without clicking. */
+.w-search .incog {
+  display: grid; place-items: center;
+  padding: 0; width: 30px; height: 26px; flex: 0 0 auto;
+  color: var(--text-faint);
+  transition: color .16s, background .16s;
+}
+.w-search .incog:hover { color: var(--text); background: hsl(0 0% 100% / .13); }
+.w-search .incog.on { color: var(--accent); background: hsl(0 0% 100% / .1); }
+.w-search .incog svg { display: block; }
+
+/* ---------- preset picker ---------- */
+.dp-label {
+  display: block; font-size: 10.5px; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--text-faint); margin: 2px 0 4px;
+}
+select.dp-field { cursor: pointer; appearance: none; padding-right: 28px;
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+                    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 15px) 50%, calc(100% - 10px) 50%;
+  background-size: 5px 5px, 5px 5px; background-repeat: no-repeat; }
+select.dp-field option { background: #1a1d28; color: #fff; }
+.preset-preview {
+  font-size: 11px; color: var(--text-dim); line-height: 1.55; margin: 2px 0 4px;
+  padding: 8px 10px; border-radius: 10px; background: hsl(0 0% 100% / .07);
+}
+
+/* ---------- homescreen switcher ---------- */
+#spaces {
+  position: fixed; z-index: 32; top: 16px; left: 16px;
+  --radius: 16px; display: flex; align-items: center; gap: 4px; padding: 5px;
+  max-width: calc(100vw - 140px); flex-wrap: wrap;
+}
+.space-chip {
+  padding: 6px 13px; border-radius: 12px; font-size: 12.5px; color: var(--text-dim);
+  white-space: nowrap; transition: background .18s, color .18s;
+}
+.space-chip:hover { background: hsl(0 0% 100% / .14); color: var(--text); }
+.space-chip.on { background: hsl(0 0% 100% / .2); color: var(--text); font-weight: 500; }
+.space-chip.add { font-size: 17px; font-weight: 300; padding: 3px 11px 5px; color: var(--text-dim); }
+#spaces-popover {
+  position: fixed; z-index: 46; width: 290px; padding: 15px 16px 14px;
+  --radius: 18px;
+  /* Same reasoning as the settings panel: it sits over the wallpaper and holds
+     small text and input fields, so it needs a denser backdrop than the
+     ambient glass to stay legible. */
+  --blur: 44px;
+  --tint-a: 0.17;
+  --sat: 200%;
+}
+
+/* ---------- settings ---------- */
+#settings {
+  position: fixed; z-index: 45; top: 14px; right: 14px; bottom: 14px; width: 396px;
+  --radius: 24px; display: flex; flex-direction: column; overflow: hidden;
+  animation: slide-in .34s cubic-bezier(.2,.9,.25,1);
+  /* Deliberately much heavier than the global glass setting: the panel is
+     dense text and has to stay readable over any wallpaper or video. */
+  --blur: 60px;
+  --tint-a: 0.20;
+  --sat: 210%;
+}
+#settings.dragged { animation: none; }
+#settings header { cursor: grab; user-select: none; }
+#settings header:active { cursor: grabbing; }
+#settings header h2::before {
+  content: "⠿"; margin-right: 9px; opacity: .32; font-size: 15px; vertical-align: 1px;
+}
+@keyframes slide-in { from { opacity: 0; transform: translateX(30px); } }
+#settings header { display: flex; align-items: center; padding: 18px 20px 12px; }
+#settings h2 { flex: 1; margin: 0; font-size: 19px; font-weight: 500; }
+#settings .icon-btn { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; color: var(--text-dim); }
+#settings .icon-btn:hover { background: hsl(0 0% 100% / .14); color: var(--text); }
+#settings-tabs { display: flex; gap: 4px; padding: 0 14px 10px; flex-wrap: wrap; }
+#settings-tabs button { padding: 5px 11px; border-radius: 999px; font-size: 12px; color: var(--text-dim); }
+#settings-tabs button.on { background: hsl(0 0% 100% / .16); color: var(--text); }
+#settings-body { flex: 1; overflow-y: auto; padding: 6px 20px 24px; }
+.set-group { margin-bottom: 20px; }
+.set-group > h3 { font-size: 11px; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--text-faint); margin: 0 0 10px; }
+.set-row { display: flex; align-items: center; gap: 12px; padding: 7px 0; font-size: 13.5px; }
+.set-row label { flex: 1; }
+.set-row .hint { display: block; font-size: 11px; color: var(--text-faint); margin-top: 2px; line-height: 1.4; }
+.set-row input[type=text], .set-row input[type=number], .set-row select {
+  background: hsl(0 0% 100% / .10); border: 1px solid hsl(0 0% 100% / .10); border-radius: 9px;
+  padding: 6px 9px; outline: 0; font-size: 12.5px; max-width: 168px; user-select: text; }
+.set-row select option { background: #1a1d28; }
+.set-row input[type=range] { max-width: 140px; }
+.set-row input[type=color] { width: 34px; height: 26px; border: 0; background: none; padding: 0; cursor: pointer; }
+.switch { width: 42px; height: 24px; border-radius: 999px; background: hsl(0 0% 100% / .16);
+  position: relative; cursor: pointer; transition: background .2s; flex: 0 0 auto; }
+.switch i { position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%;
+  background: #fff; transition: transform .22s cubic-bezier(.2,.9,.25,1); }
+.switch.on { background: var(--accent); }
+.switch.on i { transform: translateX(18px); }
+.btn { padding: 8px 14px; border-radius: 11px; font-size: 12.5px; background: hsl(0 0% 100% / .12);
+  border: 1px solid hsl(0 0% 100% / .10); transition: background .18s; }
+.btn:hover { background: hsl(0 0% 100% / .2); }
+.btn.primary { background: var(--accent); color: #06121c; border-color: transparent; font-weight: 500; }
+.btn.danger { color: #ff8a94; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.wp-swatches { display: grid; grid-template-columns: repeat(5, 1fr); gap: 7px; }
+.wp-sw { height: 44px; border-radius: 11px; cursor: pointer; border: 2px solid transparent; }
+.wp-sw.on { border-color: #fff; }
+.code { font-family: ui-monospace, Consolas, monospace; font-size: 11px; background: hsl(0 0% 100% / .1);
+  padding: 7px 9px; border-radius: 8px; word-break: break-all; user-select: text; line-height: 1.5; }

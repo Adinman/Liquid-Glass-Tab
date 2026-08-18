@@ -1,0 +1,158 @@
+/* ---------- reset + tokens ---------- */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+
+/* Must come before any rule that sets `display` on a toggleable element.
+   The UA stylesheet's [hidden] { display: none } loses to any author display
+   rule, so panels like #palette-overlay (display:grid) and #settings
+   (display:flex) would stay on screen while their hidden attribute was set. */
+[hidden] { display: none !important; }
+
+:root {
+  /* glass tuning (overridden live from settings) */
+  --blur: 18px;
+  --sat: 180%;
+  --bri: 108%;
+  --tint: 0 0% 100%;
+  --tint-a: 0.10;
+  --edge-a: 0.55;
+  --radius: 26px;
+  --refract: 42;           /* displacement scale */
+  --shadow: 0 18px 50px rgba(0,0,0,.38);
+
+  /* palette */
+  --accent: #7cc6ff;
+  --accent-2: #b48bff;
+  --text: rgba(255,255,255,.94);
+  --text-dim: rgba(255,255,255,.62);
+  --text-faint: rgba(255,255,255,.38);
+  --font: "SF Pro Display", "Segoe UI Variable Display", "Segoe UI", Inter, system-ui, sans-serif;
+
+  --dock-size: 56px;
+  --dock-mag: 1.55;
+  color-scheme: dark;
+}
+
+:root[data-scheme="light"] {
+  --tint: 0 0% 100%;
+  --tint-a: 0.42;
+  --edge-a: 0.85;
+  --text: rgba(20,22,28,.95);
+  --text-dim: rgba(20,22,28,.60);
+  --text-faint: rgba(20,22,28,.35);
+  --shadow: 0 18px 50px rgba(20,22,40,.18);
+  color-scheme: light;
+}
+
+body {
+  font-family: var(--font);
+  color: var(--text);
+  background: #0a0c14;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+button, input, textarea, select { font: inherit; color: inherit; }
+button { background: none; border: 0; cursor: pointer; }
+a { color: inherit; text-decoration: none; }
+::selection { background: color-mix(in srgb, var(--accent) 55%, transparent); }
+
+/* ---------- wallpaper ---------- */
+#wallpaper { position: fixed; inset: 0; z-index: 0; overflow: hidden; }
+#wp-image {
+  position: absolute; inset: 0;
+  background: linear-gradient(140deg, #1b2a4a, #46216b 45%, #0d2b3e);
+  background-size: cover; background-position: center;
+  /* Deliberately not transitioning `background`: it makes Chrome treat the
+     shorthand's longhands as animatable and pin background-position to 0% 0%. */
+}
+
+/* A custom photo or video shouldn't be veiled by the animated colour blobs. */
+:root[data-wp="custom"] #wp-mesh,
+:root[data-wp="video"] #wp-mesh { display: none; }
+
+/* ---------- live (video) wallpaper ---------- */
+#wp-video {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+  /* fades in once the first frame is decoded, so you never see a black flash */
+  opacity: 0; transition: opacity .5s ease;
+}
+#wp-video.ready { opacity: 1; }
+#wp-dim {
+  position: absolute; inset: 0; pointer-events: none;
+  background: #000; opacity: var(--wp-dim, 0);
+  transition: opacity .3s ease;
+}
+#wp-mesh { position: absolute; inset: -20%; filter: blur(70px); opacity: var(--mesh-op, .85); }
+.blob {
+  position: absolute; width: 46vw; height: 46vw; border-radius: 50%;
+  mix-blend-mode: screen; opacity: .55;
+  animation: drift var(--dur, 34s) ease-in-out infinite alternate;
+}
+.b1 { background: #4f8cff; top: -8%;  left: -6%;  --dur: 31s; }
+.b2 { background: #b455ff; top: 22%;  left: 52%;  --dur: 43s; animation-delay: -6s; }
+.b3 { background: #21d4c8; top: 58%;  left: 8%;   --dur: 37s; animation-delay: -12s; }
+.b4 { background: #ff5f9e; top: 46%;  left: 66%;  --dur: 49s; animation-delay: -20s; }
+@keyframes drift {
+  0%   { transform: translate3d(0,0,0) scale(1); }
+  50%  { transform: translate3d(6vw,-7vh,0) scale(1.18); }
+  100% { transform: translate3d(-8vw,5vh,0) scale(.92); }
+}
+/* The tile is 220px square and `background-size` must stay matched to it, or
+   the noise is resampled and the grain reads coarser and blurrier. */
+#wp-grain {
+  position: absolute; inset: 0; pointer-events: none; opacity: var(--grain, .05);
+  background-image: url("../assets/grain.png"); background-size: 220px;
+}
+#wp-vignette {
+  position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(120% 90% at 50% 40%, transparent 45%, rgba(0,0,0,.45));
+  opacity: var(--vignette, 1);
+}
+:root[data-animate="off"] .blob { animation: none; }
+
+/* ---------- reduced motion ----------
+   Someone who has asked their OS for less motion should get a still page, not
+   a slightly calmer one. This kills the decorative movement: drifting colour
+   blobs, the entry animation on every panel, the settings and palette
+   slide-ins, the edit-mode pulse, and the long easings.
+
+   Two things are deliberately left alone. The audio visualiser is the point of
+   that widget rather than decoration, and a live video wallpaper is something
+   the user chose and pointed at a file — silently freezing either would read
+   as broken. Both have their own off switches.
+
+   `!important` throughout because several of these animations are set inline
+   or by more specific selectors (the per-widget animation-delay, for one). */
+@media (prefers-reduced-motion: reduce) {
+  .blob { animation: none !important; }
+  .widget,
+  #settings,
+  #palette,
+  #palette-overlay,
+  #toast { animation: none !important; }
+  :root[data-edit="on"] .widget::before { animation: none !important; }
+
+  *, *::before, *::after {
+    transition-duration: .01ms !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ---------- stage ---------- */
+#stage { position: relative; z-index: 1; height: 100%; }
+
+#toast {
+  position: fixed; left: 50%; bottom: calc(var(--dock-size) + 76px); transform: translateX(-50%);
+  z-index: 60; padding: 10px 18px; border-radius: 999px; font-size: 13.5px;
+  background: rgba(10,12,20,.72); backdrop-filter: blur(14px);
+  border: 1px solid rgba(255,255,255,.14); box-shadow: var(--shadow);
+  animation: toast-in .28s cubic-bezier(.2,.9,.25,1);
+}
+@keyframes toast-in { from { opacity: 0; transform: translate(-50%, 12px); } }

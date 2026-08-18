@@ -1,0 +1,15 @@
+# Build output — regenerate with `python package.py`
+dist/
+
+# Editor and tooling
+.claude/
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store
+Thumbs.db

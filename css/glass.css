@@ -1,0 +1,267 @@
+/* ============================================================
+   Liquid glass
+   Four stacked effects:
+     1. backdrop refraction  (SVG displacement map, edges only)
+     2. backdrop blur + saturation
+     3. tint fill
+     4. edge light + specular highlight that tracks the pointer
+   ============================================================ */
+
+.glass {
+  position: relative;
+  border-radius: var(--radius);
+  background: hsl(var(--tint) / var(--tint-a));
+  box-shadow:
+    var(--shadow),
+    inset 0 1px 0 hsl(0 0% 100% / calc(var(--edge-a) * .9)),
+    inset 0 -1px 1px hsl(0 0% 100% / calc(var(--edge-a) * .28)),
+    inset 0 0 22px hsl(0 0% 100% / .05);
+}
+
+/* NOTE: deliberately no `isolation: isolate` here. Isolation creates a
+   "backdrop root", which would limit ::before's backdrop-filter to sampling
+   only this panel — the wallpaper behind it would stop showing through and
+   the glass would render as flat grey. Same reason .sheen avoids
+   mix-blend-mode and #palette-overlay avoids its own backdrop-filter. */
+
+/* layer 1+2: the refracting backdrop. Kept on its own element so the
+   displacement filter never touches the panel's own content. */
+.glass::before {
+  content: "";
+  position: absolute; inset: 0;
+  border-radius: inherit;
+  z-index: -1;
+  backdrop-filter: url(#lg-refract) blur(var(--blur)) saturate(var(--sat)) brightness(var(--bri));
+  -webkit-backdrop-filter: blur(var(--blur)) saturate(var(--sat)) brightness(var(--bri));
+}
+/* if the SVG filter is unsupported/disabled we drop to plain blur */
+:root[data-refract="off"] .glass::before {
+  backdrop-filter: blur(var(--blur)) saturate(var(--sat)) brightness(var(--bri));
+}
+
+/* layer 4: the bright rim. A masked gradient border - brightest where a
+   real lens would catch light (top-left and bottom-right). */
+.glass::after {
+  content: "";
+  position: absolute; inset: 0;
+  border-radius: inherit;
+  padding: 1.2px;
+  background: linear-gradient(
+    var(--edge-angle, 145deg),
+    hsl(0 0% 100% / var(--edge-a)) 0%,
+    hsl(0 0% 100% / .06) 34%,
+    hsl(0 0% 100% / .03) 62%,
+    hsl(0 0% 100% / calc(var(--edge-a) * .8)) 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* Specular sheen — a soft light that follows the cursor across the panel.
+   z-index MUST stay negative. At a positive z-index this paints over the
+   panel's own content, laying a white wash across icons and text: blacks lift
+   to grey and colours desaturate. At -1 it sits above the blurred backdrop
+   (::before, also -1 but earlier in tree order) and below everything else. */
+.sheen {
+  position: absolute; inset: 0; border-radius: inherit;
+  pointer-events: none; z-index: -1; opacity: 0;
+  transition: opacity .35s ease;
+  background: radial-gradient(
+    260px circle at var(--mx, 50%) var(--my, 0%),
+    hsl(0 0% 100% / .16), transparent 62%);
+}
+.glass:hover > .sheen { opacity: 1; }
+:root[data-sheen="off"] .sheen { display: none; }
+
+/* ---------- widget panels ---------- */
+.widget {
+  position: absolute;
+  z-index: 1;          /* own stacking context, so ::before/-1 stays inside */
+  padding: 18px 20px;
+  min-width: 150px;
+  transition: box-shadow .25s ease, transform .25s cubic-bezier(.2,.9,.25,1);
+  animation: panel-in .5s cubic-bezier(.2,.9,.25,1) backwards;
+}
+@keyframes panel-in { from { opacity: 0; transform: translateY(14px) scale(.97); } }
+
+.widget > header {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 11px; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--text-faint); margin-bottom: 10px;
+}
+.widget > header .grow { flex: 1; }
+.widget .icon-btn {
+  width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center;
+  color: var(--text-dim); font-size: 13px; line-height: 1;
+  transition: background .18s, color .18s;
+}
+.widget .icon-btn:hover { background: hsl(0 0% 100% / .13); color: var(--text); }
+
+/* edit mode */
+:root[data-edit="on"] .widget { cursor: grab; box-shadow: var(--shadow), 0 0 0 1.5px var(--accent); }
+:root[data-edit="on"] .widget:active { cursor: grabbing; }
+:root[data-edit="on"] .widget::before { animation: pulse 2.4s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .82; } }
+.widget.dragging { transition: none; z-index: 40; transform: scale(1.03); }
+.widget .drag-badge {
+  position: absolute; top: -10px; right: -10px; width: 22px; height: 22px;
+  border-radius: 50%; display: none; place-items: center; font-size: 12px;
+  background: var(--accent); color: #071019; box-shadow: 0 4px 12px rgba(0,0,0,.4);
+}
+:root[data-edit="on"] .widget .drag-badge { display: grid; }
+
+/* ---------- dock ---------- */
+#dock-zone {
+  position: fixed; z-index: 30; left: 0; right: 0; bottom: 0;
+  display: flex; justify-content: center; align-items: flex-end;
+  padding: 0 0 18px; pointer-events: none;
+}
+#dock-zone[data-edge="top"] { bottom: auto; top: 0; align-items: flex-start; padding: 18px 0 0; }
+#dock-zone[data-hidden="true"] #dock { transform: translateY(calc(100% + 26px)); }
+#dock-zone[data-edge="top"][data-hidden="true"] #dock { transform: translateY(calc(-100% - 26px)); }
+#dock-zone:hover #dock, #dock-zone:focus-within #dock { transform: none; }
+
+/* Reveal strip. Without this, auto-hide is a one-way trip: the zone is
+   pointer-events:none and the only hoverable child is #dock itself, which has
+   just been translated off-screen — so nothing is left to hover. */
+#dock-hot { display: none; position: absolute; left: 0; right: 0; height: 26px; pointer-events: auto; }
+#dock-zone[data-hidden="true"] #dock-hot { display: block; bottom: 0; }
+#dock-zone[data-edge="top"][data-hidden="true"] #dock-hot { bottom: auto; top: 0; }
+
+#dock {
+  pointer-events: auto;
+  position: relative; z-index: 1;
+  --radius: 24px;
+  padding: 9px 12px;
+  transition: transform .38s cubic-bezier(.2,.9,.25,1);
+}
+#dock-items { display: flex; align-items: flex-end; gap: var(--dock-gap, 6px); height: var(--dock-size); }
+
+/* Hover effects are driven entirely from dock.js (see the animation loop
+   there). CSS :hover can only ever style the one item under the cursor and
+   cancels its animation the instant the pointer leaves, which is exactly what
+   made fast sweeps show nothing. Only the inert state lives here. */
+:root[data-dock-hover="none"] .dock-item:hover .plate { background: hsl(0 0% 100% / .24); }
+
+.dock-item {
+  position: relative;
+  width: var(--dock-size); height: var(--dock-size);
+  flex: 0 0 auto;
+  display: grid; place-items: center;
+  border-radius: 30%;
+  transform-origin: bottom center;
+  /* No transform transition: the rAF loop in dock.js does its own easing, and
+     a CSS transition on top of it fights the per-frame writes. */
+  cursor: pointer;
+  will-change: transform;
+}
+#dock-zone[data-edge="top"] .dock-item { transform-origin: top center; }
+/* Keyboard focus. :focus-visible rather than :focus so clicking an item does
+   not leave a ring behind. The dock is one tab stop and the arrow keys move
+   within it, so without this indicator there is no way to tell which bookmark
+   is about to open. #dock-zone:focus-within already slides an auto-hidden dock
+   back into view, so a focused item is never off-screen. */
+.dock-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 30%;
+}
+.dock-item:focus-visible .plate { background: hsl(0 0% 100% / .24); }
+.dock-item img, .dock-item .glyph {
+  width: 62%; height: 62%; object-fit: contain; pointer-events: none;
+}
+/* Favicons are tiny and sit on a bright translucent plate, which flattens
+   them. A saturation/contrast lift makes brand colours read at this size. */
+.dock-item img {
+  filter:
+    saturate(var(--icon-sat, 130%))
+    contrast(var(--icon-con, 108%))
+    drop-shadow(0 2px 5px rgba(0,0,0,.5));
+}
+.dock-item .glyph { filter: drop-shadow(0 3px 6px rgba(0,0,0,.4)); }
+.fly-item img, .speed-item img { filter: saturate(var(--icon-sat, 130%)) contrast(var(--icon-con, 108%)); }
+.dock-item .glyph { display: grid; place-items: center; font-size: 21px; }
+.dock-item .plate {
+  position: absolute; inset: 8%; border-radius: 28%; z-index: -1;
+  background: hsl(0 0% 100% / .10);
+  box-shadow: inset 0 1px 0 hsl(0 0% 100% / .4);
+}
+.dock-item:hover .plate { background: hsl(0 0% 100% / .18); }
+.dock-item .label {
+  position: absolute; bottom: calc(100% + 12px); left: 50%; translate: -50% 0;
+  padding: 5px 11px; border-radius: 9px; font-size: 12px; white-space: nowrap;
+  background: rgba(12,14,22,.82); border: 1px solid hsl(0 0% 100% / .14);
+  opacity: 0; pointer-events: none; transition: opacity .15s, translate .15s;
+  translate: -50% 6px;
+}
+#dock-zone[data-edge="top"] .dock-item .label { bottom: auto; top: calc(100% + 12px); }
+.dock-item:hover .label { opacity: 1; translate: -50% 0; }
+:root[data-dock-labels="off"] .dock-item .label { display: none; }
+.dock-item.folder .plate { background: hsl(0 0% 100% / .16); }
+.dock-item .dot {
+  position: absolute; bottom: -5px; left: 50%; translate: -50% 0;
+  width: 4px; height: 4px; border-radius: 50%; background: hsl(0 0% 100% / .7);
+}
+.dock-sep { width: 1px; height: 62%; align-self: center; background: hsl(0 0% 100% / .18); margin: 0 5px; }
+.dock-item.drop-target { outline: 2px dashed var(--accent); outline-offset: -4px; }
+
+#dock-flyout {
+  pointer-events: auto; position: absolute; z-index: 2; bottom: calc(100% + 10px);
+  padding: 10px; max-width: 460px; max-height: 60vh; overflow: auto;
+  display: grid; grid-template-columns: repeat(auto-fill, 92px); gap: 4px;
+}
+.fly-item {
+  display: grid; place-items: center; gap: 6px; padding: 10px 6px;
+  border-radius: 14px; width: 92px; font-size: 11px; text-align: center;
+  color: var(--text-dim);
+}
+.fly-item img { width: 26px; height: 26px; }
+.fly-item span { width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fly-item:hover { background: hsl(0 0% 100% / .14); color: var(--text); }
+
+/* ---------- add / edit bookmark sheet ---------- */
+.dock-item.add .glyph { font-size: 26px; font-weight: 300; opacity: .85; }
+#dock.drop-add { outline: 2px dashed var(--accent); outline-offset: 4px; }
+
+#dock-popover {
+  pointer-events: auto; position: absolute; z-index: 4;
+  bottom: calc(100% + 10px); width: 330px; padding: 15px 16px 14px;
+}
+#dock-zone[data-edge="top"] #dock-popover { bottom: auto; top: calc(100% + 10px); }
+.dp-title {
+  font-size: 11px; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--text-faint); margin-bottom: 11px;
+}
+/* Dark, near-opaque fill rather than a white wash. The OS text cursor is a thin
+   black I-beam with a 1px white outline; over a translucent field sitting on a
+   bright or busy wallpaper it has nothing to contrast against and reads as an
+   invisible mouse pointer. */
+.dp-field {
+  width: 100%; margin-bottom: 8px; padding: 9px 11px; font-size: 13px;
+  border-radius: 10px; outline: 0; user-select: text;
+  background: hsl(228 24% 9% / .62); border: 1px solid hsl(0 0% 100% / .16);
+  color: var(--text);
+}
+.dp-field:focus { border-color: var(--accent); background: hsl(228 24% 9% / .78); }
+:root[data-scheme="light"] .dp-field { background: hsl(0 0% 100% / .74); }
+:root[data-scheme="light"] .dp-field:focus { background: hsl(0 0% 100% / .9); }
+.dp-field::placeholder { color: var(--text-faint); }
+.dp-row { display: flex; flex-wrap: wrap; gap: 7px; justify-content: flex-end; margin-top: 4px; }
+.dp-row .btn { padding: 7px 12px; font-size: 12px; }
+.dp-err { color: #ff8a94; font-size: 11.5px; margin-bottom: 8px; }
+.dp-sep {
+  margin: 13px 0 8px; padding-top: 11px; font-size: 10px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--text-faint);
+  border-top: 1px solid hsl(0 0% 100% / .1);
+}
+.dp-tabs { max-height: 168px; }
+.dp-tab {
+  display: flex; align-items: center; gap: 9px; padding: 7px 9px;
+  border-radius: 10px; cursor: pointer; font-size: 13px; color: var(--text-dim);
+}
+.dp-tab:hover { background: hsl(0 0% 100% / .14); color: var(--text); }
+.dp-tab img, .dp-tab .letter { width: 16px; height: 16px; flex: 0 0 auto; }
+.dp-tab span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dp-letter { font-size: 9px; border-radius: 4px; }

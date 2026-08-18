@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>New Tab</title>
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/glass.css">
+  <link rel="stylesheet" href="css/ui.css">
+</head>
+<body>
+  <!-- Wallpaper stack -->
+  <div id="wallpaper" aria-hidden="true">
+    <div id="wp-image"></div>
+    <video id="wp-video" autoplay loop muted playsinline disablepictureinpicture hidden></video>
+    <div id="wp-dim"></div>
+    <div id="wp-mesh">
+      <span class="blob b1"></span><span class="blob b2"></span>
+      <span class="blob b3"></span><span class="blob b4"></span>
+    </div>
+    <div id="wp-grain"></div>
+    <div id="wp-vignette"></div>
+  </div>
+
+  <!-- SVG filters that give the glass its refraction. Generated at runtime. -->
+  <!-- The filter region must match the element exactly, or the displacement
+       bands land outside the panel and the edges look wrong. -->
+  <svg id="lg-defs" width="0" height="0" aria-hidden="true"
+       style="position:absolute;top:0;left:0;pointer-events:none">
+    <defs>
+      <filter id="lg-refract" x="0" y="0" width="100%" height="100%"
+              color-interpolation-filters="sRGB">
+        <feImage id="lg-map" href="" preserveAspectRatio="none" result="map"></feImage>
+        <feDisplacementMap id="lg-disp" in="SourceGraphic" in2="map" scale="0"
+                           xChannelSelector="R" yChannelSelector="G"></feDisplacementMap>
+      </filter>
+    </defs>
+  </svg>
+
+  <!-- Homescreen switcher -->
+  <div id="spaces" class="glass" role="tablist" aria-label="Homescreens"></div>
+  <div id="spaces-popover" class="glass" hidden></div>
+
+  <main id="stage" aria-label="Dashboard"></main>
+
+  <!-- Bookmark dock -->
+  <div id="dock-zone" data-edge="bottom">
+    <div id="dock" class="glass" role="toolbar" aria-label="Bookmarks">
+      <div id="dock-items"></div>
+    </div>
+    <div id="dock-flyout" class="glass" hidden></div>
+    <div id="dock-popover" class="glass" hidden></div>
+    <div id="dock-hot" aria-hidden="true"></div>
+  </div>
+
+  <!-- Command palette -->
+  <div id="palette-overlay" hidden>
+    <div id="palette" class="glass" role="dialog" aria-label="Command palette">
+      <input id="palette-input" type="text" spellcheck="false" autocomplete="off"
+             placeholder="Search bookmarks, history, tabs, or type a command…">
+      <div id="palette-results" role="listbox"></div>
+      <div id="palette-hint"><kbd>↑</kbd><kbd>↓</kbd> navigate · <kbd>Enter</kbd> open · <kbd>Esc</kbd> close</div>
+    </div>
+  </div>
+
+  <!-- Settings drawer -->
+  <aside id="settings" class="glass" hidden aria-label="Settings">
+    <header>
+      <h2>Settings</h2>
+      <button id="settings-close" class="icon-btn" title="Close">✕</button>
+    </header>
+    <nav id="settings-tabs"></nav>
+    <div id="settings-body"></div>
+  </aside>
+
+  <!-- Floating controls -->
+  <div id="hud">
+    <button id="btn-edit" class="hud-btn glass" title="Toggle layout edit mode (E)">✥</button>
+    <button id="btn-settings" class="hud-btn glass" title="Settings (,)">⚙</button>
+  </div>
+
+  <div id="toast" hidden></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
