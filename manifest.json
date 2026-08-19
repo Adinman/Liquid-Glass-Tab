@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Liquid Glass Tab",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "An Apple-style liquid-glass new tab: bookmark dock, weather, news, a Spotify player with visualizer, and synced lyrics.",
   "minimum_chrome_version": "116",
 
