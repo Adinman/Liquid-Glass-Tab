@@ -550,6 +550,19 @@ const PANELS = {
         },
       })),
     ),
+    group('About',
+      el('div', { class: 'hint', style: { lineHeight: 1.6, marginBottom: '10px' } },
+        `Liquid Glass Tab v${chrome.runtime.getManifest?.().version ?? ''} — free, no ads, `
+        + 'no analytics, and no server of its own. Supporting it is entirely '
+        + 'optional and changes nothing about how it works.'),
+      // rel is not optional alongside target=_blank: without noopener the
+      // opened page gets a handle back to this one through window.opener.
+      el('a', {
+        class: 'btn', href: 'https://www.patreon.com/cw/CEASEprod',
+        target: '_blank', rel: 'noopener noreferrer',
+        text: 'Support on Patreon',
+      }),
+    ),
   ],
 };
 

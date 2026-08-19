@@ -3,8 +3,19 @@
 
 const ALARM = 'lgt-refresh';
 
-chrome.runtime.onInstalled.addListener(() => {
+// Opened once, the first time the extension is installed. Guarded on
+// `reason === 'install'` on purpose: without it this fires on every automatic
+// update too, which turns a one-off into a recurring interruption and is the
+// thing that gets extensions uninstalled.
+const SUPPORT_URL = 'https://www.patreon.com/cw/CEASEprod';
+
+chrome.runtime.onInstalled.addListener(details => {
   chrome.alarms.create(ALARM, { periodInMinutes: 10 });
+  if (details.reason === 'install') {
+    chrome.tabs.create({ url: SUPPORT_URL }).catch(() => {
+      /* Never let a failed tab block the install. */
+    });
+  }
 });
 chrome.runtime.onStartup.addListener(() => {
   chrome.alarms.create(ALARM, { periodInMinutes: 10 });

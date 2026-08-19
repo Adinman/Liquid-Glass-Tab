@@ -37,7 +37,13 @@
   const noop = { addListener() {}, removeListener() {} };
 
   window.chrome = {
-    runtime: { getURL: p => new URL(p.replace(/^\//, ''), location.href).toString(), id: 'preview' },
+    runtime: {
+      getURL: p => new URL(p.replace(/^\//, ''), location.href).toString(),
+      id: 'preview',
+      // Real extensions always have this; without it any caller throws and
+      // takes its whole settings panel down with it.
+      getManifest: () => ({ version: '0.0.0-preview', name: 'Liquid Glass Tab' }),
+    },
     storage: {
       local: {
         get: async k => (k === null ? { ...mem }
