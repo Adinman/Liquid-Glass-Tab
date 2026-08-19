@@ -1,9 +1,9 @@
 # Liquid Glass Tab
 
-A new-tab replacement for Chrome: an Apple-style liquid-glass interface with a
-bookmark dock along the bottom, weather, news, a Spotify player with an audio
-visualizer and time-synced lyrics, and a pile of other widgets you can drag
-anywhere and tune to taste.
+A new-tab replacement for Chrome: a liquid-glass interface with real backdrop
+refraction, a bookmark dock along the bottom, weather, news, Spotify controls
+with an audio visualizer and time-synced lyrics, and a pile of other widgets you
+can drag anywhere and tune to taste.
 
 ---
 
@@ -435,7 +435,7 @@ wallpaper or video.
 tint opacity, edge light, corner radius, and **refraction** — an SVG
 displacement map that bends the backdrop near panel edges, which is what makes
 it read as thick glass rather than frosted plastic. Five presets included
-(Apple-ish, Frosted, Thick lens, Barely there, Solid).
+(Signature, Frosted, Thick lens, Barely there, Solid).
 
 Set refraction to 0 if you prefer a flatter look or want to save GPU. At 0 the
 SVG filter is taken out of the backdrop chain entirely rather than just having

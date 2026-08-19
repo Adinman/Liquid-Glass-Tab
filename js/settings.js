@@ -192,7 +192,7 @@ const PANELS = {
     ),
     group('Presets',
       el('div', { class: 'chips' },
-        preset('Apple-ish', { blur: 18, saturation: 180, brightness: 108, tintAlpha: 10, edgeAlpha: 55, radius: 26, refract: 42 }),
+        preset('Signature', { blur: 18, saturation: 180, brightness: 108, tintAlpha: 10, edgeAlpha: 55, radius: 26, refract: 42 }),
         preset('Frosted', { blur: 34, saturation: 130, brightness: 104, tintAlpha: 22, edgeAlpha: 40, radius: 22, refract: 8 }),
         preset('Thick lens', { blur: 10, saturation: 220, brightness: 112, tintAlpha: 6, edgeAlpha: 80, radius: 34, refract: 96 }),
         preset('Barely there', { blur: 8, saturation: 140, brightness: 102, tintAlpha: 4, edgeAlpha: 30, radius: 20, refract: 16 }),
