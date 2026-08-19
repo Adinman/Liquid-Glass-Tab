@@ -9,15 +9,24 @@ anywhere and tune to taste.
 
 ## 1. Install (2 minutes)
 
-1. Open `chrome://extensions`
-2. Turn on **Developer mode** (top-right toggle)
-3. Click **Load unpacked**
-4. Select the folder `liquid-glass-tab`
-5. Open a new tab — that's it
+1. Open **File Explorer**
+2. Go to **Downloads**
+3. Right click **Liquid-Glass-Tab-main.zip**
+4. Extract it (**Extract All**)
+5. Go to `chrome://extensions`
+6. Turn on **Developer mode** (top-right toggle)
+7. Click **Load unpacked**
+8. Select the folder **Liquid-Glass-Tab-main**
+9. Open a new tab and that's it.
+
+> **Picking the right folder in step 8.** Windows sometimes nests the extracted
+> folder inside another one with the same name. You want the folder that has
+> `manifest.json` sitting directly inside it. If Chrome says it can't find a
+> manifest, go one level deeper and try again.
 
 > **Keep the folder where it is.** For unpacked extensions Chrome derives the
 > extension ID from the folder path. Moving or renaming the folder changes the
-> ID, which invalidates the Spotify redirect URI you'll set up in step 3.
+> ID, which invalidates the Spotify redirect URI you'll set up in section 3.
 
 On first run the settings drawer opens automatically. Press <kbd>?</kbd> at any
 time for the shortcut list.
