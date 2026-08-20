@@ -193,7 +193,7 @@ export const spotify = {
         if (e.message === 'NO_DEVICE') toast('No active Spotify device — start playback somewhere first.');
         else if (e.message === 'FORBIDDEN') toast('Spotify refused that (remote control needs Premium).');
         else if (e.message === 'NOT_CONNECTED') renderDisconnected();
-        else console.warn('[liquid-glass-tab] Spotify request failed (transient):', e.message);
+        else console.warn('[cgt] Spotify request failed (transient):', e.message);
       }
     }
 

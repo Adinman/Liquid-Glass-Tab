@@ -1,8 +1,8 @@
-# Privacy Policy — Liquid Glass Tab
+# Privacy Policy — CGT: Customizable Glass Tab
 
 _Last updated: 15 August 2026_
 
-Liquid Glass Tab replaces Chrome's new tab page. This policy explains exactly
+CGT: Customizable Glass Tab replaces Chrome's new tab page. This policy explains exactly
 what it does with your data. The short version: **everything stays on your
 computer, and the only network requests are the ones needed to render features
 you turned on.**

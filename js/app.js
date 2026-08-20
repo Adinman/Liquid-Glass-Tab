@@ -33,7 +33,7 @@ function buildWidget(id) {
   try { cleanup = def.render(panel) || (() => {}); }
   catch (e) {
     panel.append(el('div', { class: 'muted', style: { fontSize: '12px' }, text: `“${id}” failed: ${e.message}` }));
-    console.error(`[liquid-glass-tab] widget ${id}`, e);
+    console.error(`[cgt] widget ${id}`, e);
   }
   teardown.set(id, cleanup);
 

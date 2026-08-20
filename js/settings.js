@@ -179,7 +179,7 @@ const PANELS = {
   ],
 
   glass: () => [
-    group('Liquid glass',
+    group('Glass material',
       row('Backdrop blur', slider('blur', 0, 40, 1)),
       row('Saturation', slider('saturation', 100, 300, 5)),
       row('Brightness', slider('brightness', 80, 140, 1)),
@@ -509,7 +509,7 @@ const PANELS = {
           onclick: () => {
             const blob = new Blob([exportSettings()], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
-            const a = el('a', { href: url, download: 'liquid-glass-tab.json' });
+            const a = el('a', { href: url, download: 'cgt-settings.json' });
             a.click();
             // Revoking in the same turn can cancel the download before it has
             // started reading the blob.
@@ -552,7 +552,7 @@ const PANELS = {
     ),
     group('About',
       el('div', { class: 'hint', style: { lineHeight: 1.6, marginBottom: '10px' } },
-        `Liquid Glass Tab v${chrome.runtime.getManifest?.().version ?? ''} — free, no ads, `
+        `CGT — Customizable Glass Tab v${chrome.runtime.getManifest?.().version ?? ''} — free, no ads, `
         + 'no analytics, and no server of its own. Supporting it is entirely '
         + 'optional and changes nothing about how it works.'),
       // rel is not optional alongside target=_blank: without noopener the

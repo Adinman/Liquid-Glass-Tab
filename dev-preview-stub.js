@@ -42,7 +42,7 @@
       id: 'preview',
       // Real extensions always have this; without it any caller throws and
       // takes its whole settings panel down with it.
-      getManifest: () => ({ version: '0.0.0-preview', name: 'Liquid Glass Tab' }),
+      getManifest: () => ({ version: '0.0.0-preview', name: 'CGT: Customizable Glass Tab' }),
     },
     storage: {
       local: {

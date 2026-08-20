@@ -2,7 +2,7 @@
 
     python package.py
 
-Writes dist/liquid-glass-tab-<version>.zip containing only what should ship —
+Writes dist/cgt-<version>.zip containing only what should ship —
 no dev harness, no generator scripts, no docs, no editor config.
 
 The checks matter more than the zipping. Every one of them corresponds to
@@ -163,7 +163,7 @@ def main():
 
     os.makedirs(DIST, exist_ok=True)
     version = m.get("version", "0")
-    out = os.path.join(DIST, f"liquid-glass-tab-{version}.zip")
+    out = os.path.join(DIST, f"cgt-{version}.zip")
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
         for rel in files:
             z.write(os.path.join(ROOT, rel), rel)

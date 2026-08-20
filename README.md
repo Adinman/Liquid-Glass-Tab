@@ -1,9 +1,9 @@
-# Liquid Glass Tab
+# CGT: Customizable Glass Tab
 
-A new-tab replacement for Chrome: a liquid-glass interface with real backdrop
-refraction, a bookmark dock along the bottom, weather, news, Spotify controls
-with an audio visualizer and time-synced lyrics, and a pile of other widgets you
-can drag anywhere and tune to taste.
+A new-tab replacement for Chrome: a customizable glass interface with real
+backdrop refraction, a bookmark dock along the bottom, weather, news, Spotify
+controls with an audio visualizer and time-synced lyrics, and a pile of other
+widgets you can drag anywhere and tune to taste.
 
 ---
 
@@ -74,7 +74,7 @@ app. You only do it once.
 
 1. Go to <https://developer.spotify.com/dashboard> and log in
 2. Click **Create app**
-3. Fill in any name and description (e.g. "Liquid Glass Tab")
+3. Fill in any name and description (e.g. "CGT")
 4. Under **Which API/SDKs are you planning to use?** tick **Web API**
 5. For **Redirect URI**, paste the value from **⚙ → Music → Redirect URI**
    (there's a *Copy redirect URI* button). It looks like:
@@ -540,7 +540,7 @@ Both files are dev-only and safe to delete — the extension never references th
 python package.py
 ```
 
-Writes `dist/liquid-glass-tab-<version>.zip` containing only what should ship —
+Writes `dist/cgt-<version>.zip` containing only what should ship —
 no dev harness, no generator scripts, no docs. It refuses to build if anything
 would be rejected or would silently break after install: a root-level file
 starting with `_`, a missing icon or generated asset, a description over 132
@@ -596,7 +596,7 @@ newtab.html          page shell + the SVG refraction filter
 background.js        service worker: cache warming, Spotify token refresh
 assets/              refraction map + film grain PNGs, and their generator
 css/base.css         reset, design tokens, wallpaper
-css/glass.css        the liquid-glass material + dock
+css/glass.css        the glass material + dock
 css/ui.css           widget and control styling
 js/app.js            bootstrap, drag layout, shortcuts
 js/state.js          settings load/patch/persist, import sanitising
