@@ -702,6 +702,18 @@ harness it beat the async path by 2.4 ms, and that is a floor rather than the
 real figure: the harness stubs `chrome.storage` with `localStorage`, where the
 real one is IPC to the browser process.
 
+The layer state goes in the cache too, and that turned out to be the flash
+people actually saw. `#wp-mesh` is four 46vw colour blobs under a 70px blur
+drifting at 85% opacity, and the only thing that hides them is
+`:root[data-wp="custom"|"video"]` — an attribute set inside `applyWallpaper`,
+after the settings read. So every new tab opened with a full-screen wash of
+blue, purple, teal and pink on top of the wallpaper until storage came back.
+Measured at 39 ms in the dev harness, and that is the floor again. Painting the
+correct wallpaper early did nothing for it, because the blobs are a layer above
+it — three separate fixes to the layer underneath changed nothing anyone could
+see, which is a good argument for measuring which element is on screen rather
+than reasoning about which one ought to be.
+
 `chrome.storage` stays the only source of truth. This is a cache,
 `applyWallpaper` overwrites whatever it painted a few milliseconds later, and a
 stale or missing entry costs nothing but the flash it existed to avoid. Nothing

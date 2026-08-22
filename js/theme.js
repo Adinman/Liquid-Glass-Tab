@@ -97,6 +97,18 @@ function paintCachedWallpaper() {
   node.style.backgroundSize = 'cover';
   node.style.backgroundPosition = 'center';
   node.style.backgroundRepeat = 'no-repeat';
+
+  // THE flash. #wp-mesh is four 46vw colour blobs under a 70px blur, drifting
+  // at 85% opacity, and the only thing that hides them is
+  // :root[data-wp="custom"|"video"] — an attribute set inside applyWallpaper,
+  // which runs after `await loadSettings()`. So every new tab opened with a
+  // full-screen wash of blue, purple, teal and pink over the wallpaper until
+  // storage came back, whatever the wallpaper underneath was doing. Painting
+  // the right image early never touched it, because the blobs are on top.
+  if (v.wp) document.documentElement.dataset.wp = v.wp;
+  if (Number.isFinite(v.mesh)) {
+    document.documentElement.style.setProperty('--mesh-op', v.mesh.toFixed(2));
+  }
   if (Number.isFinite(v.dim)) {
     document.documentElement.style.setProperty('--wp-dim', v.dim.toFixed(2));
   }
@@ -110,6 +122,10 @@ function rememberWallpaper() {
   const v = {
     dim: parseFloat(document.documentElement.style.getPropertyValue('--wp-dim')) || 0,
     scheme: document.documentElement.dataset.scheme,
+    // Which wallpaper layer is in charge, and how strong the colour blobs are.
+    // Both decide whether #wp-mesh is drawn at all — see paintCachedWallpaper.
+    wp: document.documentElement.dataset.wp,
+    mesh: parseFloat(document.documentElement.style.getPropertyValue('--mesh-op')),
   };
   const clip = bundled(CLIPS, S.wallpaperVideo || '');
   const photo = bundled(PHOTOS, S.wallpaperCustom || '');
