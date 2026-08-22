@@ -186,14 +186,26 @@ function rememberWallpaper() {
   };
   const clip = bundled(CLIPS, S.wallpaperVideo || '');
   const photo = bundled(PHOTOS, S.wallpaperCustom || '');
-  if (clip) v.thumb = clip.id;
-  else if (S.wallpaperVideo === 'local') v.localVideo = S.wallpaperVideoName || '';
-  else if (photo) v.photo = photo.id;
+  // `file` and `grad` are the already-resolved values early.js paints with;
+  // it runs before the modules and cannot look an id up in a registry.
+  if (clip) {
+    v.thumb = clip.id;
+    v.file = `${clip.id}.poster.avif`;
+  } else if (S.wallpaperVideo === 'local') {
+    v.localVideo = S.wallpaperVideoName || '';
+  } else if (photo) {
+    v.photo = photo.id;
+    v.file = `${photo.id}.avif`;
+  }
   else if (S.wallpaperCustom && /^https?:/i.test(S.wallpaperCustom)) v.url = S.wallpaperCustom;
   // An uploaded image lives in IndexedDB and cannot be read synchronously, so
   // the preset underneath it is cached instead — a plain gradient for one frame
   // beats a wallpaper that is not yours.
-  else v.preset = S.wallpaper;
+  else {
+    v.preset = S.wallpaper;
+    const w = WALLPAPERS.find(x => x.id === S.wallpaper);
+    if (w) v.grad = w.css;
+  }
 
   try { localStorage.setItem(WP_CACHE, JSON.stringify(v)); } catch { /* private mode, full disk */ }
 }

@@ -695,6 +695,30 @@ wallpaper you chose lives in `chrome.storage`, which is asynchronous — so ever
 new tab had a window with the default gradient on screen and your wallpaper not
 yet applied. That is the flash.
 
+**The stylesheet's own default was the flash.** `js/app.js` is
+`type="module"`, which is deferred: the browser parses the HTML, applies the
+stylesheet and is free to paint before a line of it runs. So `#wp-image`
+painted its stylesheet default — a blue/purple gradient, which is exactly what
+"it flashes the preset colours" describes — and nothing done *inside* a module
+could prevent that, because the paint had already happened. Three attempts at
+doing it earlier in the module chain all missed for this reason.
+
+`early.js` is a classic script with a `src` and no `defer`/`async`, so it
+blocks parsing and runs before the body exists — measured: `readyState`
+"loading", `document.body` null, `#wp-image` not yet created. It sets
+`--wp-first`, which `css/base.css` uses as `#wp-image`'s background, so the
+element has the right wallpaper from the moment it exists. It also sets
+`data-wp`, `--mesh-op`, `--wp-dim` and the scheme, for the same reason.
+
+It cannot import `config.js` — modules are the thing being avoided — so
+`rememberWallpaper` writes the already-resolved filename or gradient and
+`early.js` validates it against a tight pattern before it reaches a `url()`.
+Keep it small: it is render-blocking, and anything slow in it delays the paint
+it exists to fix.
+
+A brand-new profile has nothing cached and still gets the stylesheet gradient
+once, which is the correct answer for a first run.
+
 `localStorage` is synchronous on an extension page, so the last resolved
 wallpaper is mirrored there and repainted at module-evaluation time in
 `js/theme.js`, before `loadSettings()` is even called. Measured in the dev
