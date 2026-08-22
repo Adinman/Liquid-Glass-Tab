@@ -309,7 +309,14 @@ const PANELS = {
       });
       // Size is not here on purpose: it belongs to the grip in edit mode, where
       // you can see the widget you are sizing.
-      return row(label, sw);
+      //
+      // Tighter than a normal settings row. The default spacing is sized for a
+      // row carrying a real control — a slider, a select, a text field — and
+      // seventeen of them holding nothing but a toggle reads as a very long,
+      // very empty list.
+      const r = row(label, sw);
+      r.classList.add('compact');
+      return r;
     })),
     group('Layout',
       row('Shrink to fit', (() => {
