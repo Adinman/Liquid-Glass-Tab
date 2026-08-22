@@ -360,8 +360,9 @@ select.dp-field option { background: #1a1d28; color: #fff; }
 .set-group > h3 { font-size: 11px; letter-spacing: .12em; text-transform: uppercase;
   color: var(--text-faint); margin: 0 0 10px; }
 .set-row { display: flex; align-items: center; gap: 12px; padding: 7px 0; font-size: 13.5px; }
-/* A row that carries only a toggle; see the widget list in settings.js. */
-.set-row.compact { padding: 2px 0; }
+/* A row that carries only a name and a toggle; see the widget list in
+   settings.js. Spacing is the standard one — only the label grows. */
+.set-row.wtoggle { font-size: 15px; }
 .set-row label { flex: 1; }
 .set-row .hint { display: block; font-size: 11px; color: var(--text-faint); margin-top: 2px; line-height: 1.4; }
 .set-row input[type=text], .set-row input[type=number], .set-row select {

@@ -310,12 +310,11 @@ const PANELS = {
       // Size is not here on purpose: it belongs to the grip in edit mode, where
       // you can see the widget you are sizing.
       //
-      // Tighter than a normal settings row. The default spacing is sized for a
-      // row carrying a real control — a slider, a select, a text field — and
-      // seventeen of them holding nothing but a toggle reads as a very long,
-      // very empty list.
+      // Slightly larger label than a normal settings row. These rows hold only
+      // a name and a toggle pinned to the right edge, so at the default size
+      // the two sit a long way apart with nothing between them.
       const r = row(label, sw);
-      r.classList.add('compact');
+      r.classList.add('wtoggle');
       return r;
     })),
     group('Layout',
