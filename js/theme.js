@@ -3,7 +3,8 @@
 import { $ } from './util.js';
 import { setIconMode } from './icons.js';
 import { getBlob, WALLPAPER_IMAGE_KEY, WALLPAPER_VIDEO_KEY } from './media.js';
-import { WALLPAPERS, PHOTOS, CLIPS, bundled, photoFile, clipFile, bgThumb } from './config.js';
+import { WALLPAPERS, PHOTOS, CLIPS, BG_PREFIX,
+         bundled, photoFile, clipFile, bgThumb } from './config.js';
 import { S } from './state.js';
 
 /* ---------- refraction map ----------
@@ -23,6 +24,90 @@ import { S } from './state.js';
 const MAP_URL = 'assets/refract-map.png';
 
 let refractSupported = true;
+
+/* ---------- first paint ----------
+   The stylesheet paints #wp-image's default gradient the moment the document
+   has layout. Which wallpaper you actually chose lives in chrome.storage,
+   which is asynchronous, so on every single new tab there is a window where
+   the default gradient is on screen and your wallpaper is not — the flash.
+
+   localStorage is synchronous and available on an extension page, so the last
+   resolved wallpaper is mirrored there and repainted here at module-evaluation
+   time, before loadSettings() has even been called. chrome.storage stays the
+   only source of truth: this is a cache, applyWallpaper overwrites whatever it
+   painted a few milliseconds later, and a stale or missing entry costs nothing
+   but the flash it was there to avoid.
+
+   Nothing is read out of the cache as CSS. Only ids and a scheme name come
+   back, and each is resolved through the same registry lookup the live code
+   uses, so a tampered entry can name something that does not exist and that is
+   the whole of what it can do. A remote URL goes back through cssImageURL.
+
+   This runs at import, which the performance invariants forbid for anything
+   heavy. It is a localStorage read, a JSON.parse of ~60 bytes and one style
+   write — microseconds, and it is on the critical path precisely because that
+   is the path being fixed. */
+const WP_CACHE = 'lgt:wp';
+
+function paintCachedWallpaper() {
+  let v;
+  try { v = JSON.parse(localStorage.getItem(WP_CACHE) || 'null'); }
+  catch { return; }
+  if (!v || typeof v !== 'object') return;
+
+  const node = document.getElementById('wp-image');
+  if (!node) return;
+
+  let bg = null;
+  if (v.thumb) {
+    // A clip was playing. Its own first frame stands in until the video
+    // decodes, exactly as paintStill does once settings arrive.
+    const clip = bundled(CLIPS, BG_PREFIX + v.thumb);
+    if (clip) bg = `url("${bgThumb(clip.id)}")`;
+  } else if (v.photo) {
+    const photo = bundled(PHOTOS, BG_PREFIX + v.photo);
+    if (photo) bg = `url("${photoFile(photo.id)}")`;
+  } else if (v.url) {
+    const safe = cssImageURL(v.url);
+    if (safe) bg = `url("${safe}")`;
+  } else if (v.preset) {
+    const w = WALLPAPERS.find(x => x.id === v.preset);
+    if (w) bg = w.css;
+  }
+  if (!bg) return;
+
+  node.style.backgroundImage = bg;
+  node.style.backgroundSize = 'cover';
+  node.style.backgroundPosition = 'center';
+  node.style.backgroundRepeat = 'no-repeat';
+  if (Number.isFinite(v.dim)) {
+    document.documentElement.style.setProperty('--wp-dim', v.dim.toFixed(2));
+  }
+  if (v.scheme === 'light' || v.scheme === 'dark') {
+    document.documentElement.dataset.scheme = v.scheme;
+  }
+}
+
+/** Record what was just painted, so the next new tab can paint it instantly. */
+function rememberWallpaper() {
+  const v = {
+    dim: parseFloat(document.documentElement.style.getPropertyValue('--wp-dim')) || 0,
+    scheme: document.documentElement.dataset.scheme,
+  };
+  const clip = bundled(CLIPS, S.wallpaperVideo || '');
+  const photo = bundled(PHOTOS, S.wallpaperCustom || '');
+  if (clip) v.thumb = clip.id;
+  else if (photo) v.photo = photo.id;
+  else if (S.wallpaperCustom && /^https?:/i.test(S.wallpaperCustom)) v.url = S.wallpaperCustom;
+  // An uploaded image lives in IndexedDB and cannot be read synchronously, so
+  // the preset underneath it is cached instead — a plain gradient for one frame
+  // beats a wallpaper that is not yours.
+  else v.preset = S.wallpaper;
+
+  try { localStorage.setItem(WP_CACHE, JSON.stringify(v)); } catch { /* private mode, full disk */ }
+}
+
+paintCachedWallpaper();
 
 export function initTheme() {
   $('#lg-map').setAttribute('href', MAP_URL);
@@ -202,6 +287,7 @@ export function applyWallpaper() {
   if (light && S.scheme === 'dark') document.documentElement.dataset.scheme = 'light';
 
   applyVideoWallpaper();
+  rememberWallpaper();
 }
 
 /* ---------- live video wallpaper ---------- */

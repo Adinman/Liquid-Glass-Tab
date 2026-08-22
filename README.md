@@ -689,7 +689,36 @@ re-running it doesn't churn 48 KB of noise through git.
 These were all measured, and each one was a real cost before it was fixed.
 Breaking them again is easy and silent, so they're written down.
 
-**Nothing heavy runs at import or in `initTheme`.** The refraction map and the
+**The wallpaper is painted before settings have loaded.** The stylesheet paints
+`#wp-image`'s default gradient as soon as the document has layout, and which
+wallpaper you chose lives in `chrome.storage`, which is asynchronous — so every
+new tab had a window with the default gradient on screen and your wallpaper not
+yet applied. That is the flash.
+
+`localStorage` is synchronous on an extension page, so the last resolved
+wallpaper is mirrored there and repainted at module-evaluation time in
+`js/theme.js`, before `loadSettings()` is even called. Measured in the dev
+harness it beat the async path by 2.4 ms, and that is a floor rather than the
+real figure: the harness stubs `chrome.storage` with `localStorage`, where the
+real one is IPC to the browser process.
+
+`chrome.storage` stays the only source of truth. This is a cache,
+`applyWallpaper` overwrites whatever it painted a few milliseconds later, and a
+stale or missing entry costs nothing but the flash it existed to avoid. Nothing
+comes back out of it as CSS either — only ids and a scheme name, each resolved
+through the same registry lookup the live code uses, so the worst a tampered
+entry can do is name something that does not exist.
+
+It does not help a *cold* image. Setting `background-image` early starts the
+fetch and decode earlier, but a packaged still on a cold cache still has to
+decode before it can paint (measured at 57 ms for a 1920x1080 AVIF), so the
+first new tab after a browser restart can still show the gradient briefly.
+Gradients, which need no decode at all, are fixed outright.
+
+**Nothing heavy runs at import or in `initTheme`** — with one deliberate
+exception, the wallpaper repaint above. A localStorage read, a `JSON.parse` of
+about sixty bytes and one style write is microseconds, and it is on the
+critical path precisely because that path is what it fixes. The refraction map and the
 film grain used to be drawn into a canvas and turned into data URLs on every
 new tab — 15–28 ms of blocking work per tab depending on the machine, 111 KB of
 string, and a separate decode per tab because a data URL is a new resource
