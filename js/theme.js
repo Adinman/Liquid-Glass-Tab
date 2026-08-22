@@ -230,7 +230,17 @@ export function applyTheme() {
 
   st.setProperty('--blur', S.blur + 'px');
   st.setProperty('--sat', S.saturation + '%');
-  st.setProperty('--bri', S.brightness + '%');
+  // The light switch lifts the glass a little without touching the stored
+  // brightness, so switching the lights off returns to exactly what the slider
+  // says rather than to whatever it was nudged to.
+  // The light switch lifts the glass a little without touching the stored
+  // brightness, so switching the lights off returns to exactly what the slider
+  // says rather than to whatever it was nudged to.
+  const lift = Math.max(1, (Number(S.fxLightLift) || 114) / 100);
+  st.setProperty('--wp-lift', lift.toFixed(3));
+  st.setProperty('--bri',
+    (S.brightness * (S.fxLights ? 1 + (lift - 1) * 0.62 : 1)).toFixed(1) + '%');
+  document.documentElement.dataset.lights = S.fxLights ? 'on' : 'off';
   st.setProperty('--tint-a', (S.tintAlpha / 100).toFixed(3));
   st.setProperty('--edge-a', (S.edgeAlpha / 100).toFixed(3));
   st.setProperty('--radius', S.radius + 'px');

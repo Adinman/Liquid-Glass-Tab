@@ -251,6 +251,18 @@ function sanitize(s) {
     s.fxScene = '';
   }
   s.pongBest = inRange(s.pongBest, 0, 1e6, 0);
+  s.fxLights = !!s.fxLights;
+  s.fxLightLift = inRange(s.fxLightLift, 100, 140, DEFAULTS.fxLightLift);
+  // The switch position is a percentage of the viewport and is clamped rather
+  // than dropped: an out-of-range one would park the switch off-screen, and
+  // unlike a widget there is nothing to drag it back with.
+  {
+    const sw = s.fxSwitch;
+    s.fxSwitch = {
+      x: inRange(sw && sw.x, 0, 100, DEFAULTS.fxSwitch.x),
+      y: inRange(sw && sw.y, 0, 100, DEFAULTS.fxSwitch.y),
+    };
+  }
   // The settings panel position reaches inline left/top/height. A ratio outside
   // 0..1, or a negative height, would park the panel off-screen with no way to
   // drag it back, so a bad one is dropped rather than clamped into something

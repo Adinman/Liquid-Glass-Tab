@@ -98,6 +98,24 @@ a { color: inherit; text-decoration: none; }
   background: #000; opacity: var(--wp-dim, 0);
   transition: opacity .3s ease;
 }
+
+/* The light switch, when it is on. Applied only under the attribute so that
+   with the lights off there is no filter on these layers at all — a permanent
+   `filter: brightness(1)` would still force both onto their own compositing
+   layer for nothing.
+
+   brightness() rather than a white overlay on purpose: a veil raises the black
+   point and washes the picture out, where brightness scales it and keeps the
+   contrast. 1.14 is deliberately mild — the request was brighter, not blown
+   out, and anything past about 1.25 clips the highlights of a sunny photo. */
+:root[data-lights="on"] #wp-image,
+:root[data-lights="on"] #wp-video {
+  filter: brightness(var(--wp-lift, 1.14));
+}
+#wp-image, #wp-video { transition: filter .35s ease; }
+@media (prefers-reduced-motion: reduce) {
+  #wp-image, #wp-video { transition: none; }
+}
 #wp-mesh { position: absolute; inset: -20%; filter: blur(70px); opacity: var(--mesh-op, .85); }
 .blob {
   position: absolute; width: 46vw; height: 46vw; border-radius: 50%;

@@ -235,13 +235,26 @@ function fxGroup() {
       ...FX_SCENES.map(s => card(s, pro && S.fxScene === s.id, () => pick(s.id))),
       ...FX_GAMES.map(g => card(g, false, play)),
     ),
+    // Only while the switch is actually on screen — a reset button for
+    // something you cannot see is just clutter. It exists at all because a
+    // widget sitting on top of the switch owns the click, and there is then no
+    // way to grab the switch underneath to drag it out.
+    S.fxScene === 'lightswitch' && row('Light switch',
+      el('button', { class: 'btn', text: 'Reset position', onclick: async () => {
+        await set({ fxSwitch: { ...DEFAULTS.fxSwitch } });
+        toast('Switch moved back to the middle');
+      } })),
+    S.fxScene === 'lightswitch' && row('Brightness when on',
+      slider('fxLightLift', 100, 140, 2, applyTheme)),
     S.pongBest > 0 && row('Best rally', el('span', {
       class: 'faint tabular', style: { fontSize: '12px' },
       text: String(S.pongBest),
     })),
     el('div', { class: 'hint' },
       'Backgrounds react to the mouse and pause when the tab is hidden. '
-      + 'Press Esc to leave a game.'),
+      + 'Hold the mouse down to push the particles away. '
+      + 'The light switch can be dragged, and brightens the wallpaper and glass '
+      + 'while it is on. Press Esc to leave a game.'),
     ...proRows(),
   );
 }

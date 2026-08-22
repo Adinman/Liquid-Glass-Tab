@@ -164,7 +164,17 @@ function onDown(e) {
   if (shouldRun()) start(); else drawStill();
 }
 
-function onUp() { pointer.down = false; scene?.pointerup?.(); }
+/** Clearing `down` matters more than setting it: hold-to-repel and the light
+ *  switch drag both run for as long as it is true, so a missed release leaves
+ *  the field permanently repelling and the switch stuck to the cursor. Hence
+ *  capture phase (a widget's own pointerup calls stopPropagation), plus
+ *  pointercancel and blur — a release outside the window, or an alt-tab
+ *  mid-drag, never delivers a pointerup at all. */
+function onUp() {
+  if (!pointer.down) return;
+  pointer.down = false;
+  scene?.pointerup?.();
+}
 
 /** A scene returning true has consumed the key. Only the games do, and only for
  *  Escape and the pause key — the palette, the edit-mode shortcut and every
@@ -179,7 +189,9 @@ function listen(on) {
   const fn = on ? addEventListener : removeEventListener;
   fn('pointermove', onMove, { passive: true });
   fn('pointerdown', onDown, true);      // capture: widgets stopPropagation on theirs
-  fn('pointerup', onUp, { passive: true });
+  fn('pointerup', onUp, { capture: true, passive: true });
+  fn('pointercancel', onUp, { capture: true, passive: true });
+  fn('blur', onUp);
   fn('pointerleave', onLeave, { passive: true });
   fn('keydown', onKey, true);
 }

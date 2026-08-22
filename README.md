@@ -440,8 +440,8 @@ glass panel that overlaps them.
 
 | | What it does |
 |---|---|
-| **Particles** | A field that drifts, gathers toward the cursor, and scatters when you click |
-| **Light switch** | A switch on the wall at centre-bottom. Clicking it flips the page between dark and light |
+| **Particles** | A field that drifts, gathers toward the cursor, and scatters when you click. **Hold the mouse down** to keep pushing it away |
+| **Light switch** | A switch you can **drag anywhere**. Clicking it brightens the wallpaper and the glass a little; clicking again returns to normal |
 | **Pong** | Endless rally against the computer, launched from the same picker |
 
 Particles and the light switch are backgrounds: pick one and it stays. Pong is a
@@ -459,11 +459,18 @@ cannot be lost.
 
 | Scene | 720p | 1080p | 1440p |
 |---|---|---|---|
-| Particles | 0.15 ms | 0.24 ms | 0.18 ms |
-| Light switch | 0.02 ms | 0.01 ms | 0.01 ms |
-| Pong | 0.02 ms | 0.03 ms | 0.02 ms |
+| Particles | 0.64 ms | 0.98 ms | 0.79 ms |
+| Light switch | 0.11 ms | 0.08 ms | 0.08 ms |
+| Pong | 0.08 ms | 0.11 ms | 0.06 ms |
 
-The frame budget at 60 Hz is 16.7 ms, so the worst case is about 1.5% of it.
+The frame budget at 60 Hz is 16.7 ms, so the worst case is about 6% of it.
+
+Particles used to measure 0.24 ms, and the four-fold rise is the price of dots
+big enough to see and an outline pass that keeps them visible on a pale
+wallpaper. On the way there the naive drawing cost about 1.5 ms, nearly all of
+it in roughly 6,000 individual `stroke()` calls for the links; sorting those
+into six opacity buckets and stroking one `Path2D` per bucket cut a third off
+with no visible banding.
 1440p is not worse than 1080p because the particle count is capped at 110 and
 both resolutions hit the cap — the linking pass is O(n²) in particle count, not
 in pixels. The loop is cancelled outright — not merely early-returned — when the
@@ -473,6 +480,25 @@ the light switch is visible and usable rather than absent.
 
 The scene code is imported the first time a scene is switched on, so a tab
 belonging to somebody who never enables one never loads any of it.
+
+**The light switch does not touch the colour scheme.** An earlier version
+flipped dark/light, which was a far bigger hammer than a switch in the corner of
+the wallpaper should be — it repainted every panel, icon and label on the page.
+It now sets `data-lights` on the root, which `brightness()` on `#wp-image` and
+`#wp-video` reads, and which `applyTheme` uses to lift `--bri` by a fraction of
+the same amount. `brightness()` rather than a white veil: a veil raises the
+black point and washes the picture out, where brightness scales it and keeps the
+contrast. The strength is **⚙ → Look → Brightness when on**, and the glass takes
+about 62% of whatever the wallpaper takes, because matching them makes the panels
+look washed out well before the wallpaper looks bright. With the lights off
+there is no filter on those layers at all, so neither is forced onto its own
+compositing layer for nothing.
+
+**One limitation worth knowing.** The switch is drawn on the canvas, which sits
+below the widgets — so if a widget covers the switch, the click belongs to the
+widget and there is no way to grab the switch underneath to drag it out. That is
+what **⚙ → Look → Light switch → Reset position** is for; it is the only way
+back from a buried switch.
 
 ### Pro and licensing
 

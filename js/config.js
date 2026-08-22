@@ -95,9 +95,9 @@ export function bundled(list, value) {
    picker entry that does nothing. */
 export const FX_SCENES = [
   { id: 'particles', name: 'Particles',
-    blurb: 'A drifting field that gathers around the cursor and scatters when you click.' },
+    blurb: 'Gathers around the cursor. Hold the mouse down to push it away.' },
   { id: 'lightswitch', name: 'Light switch',
-    blurb: 'A switch on the wall. Click it to flip the whole page between dark and light.' },
+    blurb: 'Drag it anywhere. Click it to brighten the wallpaper and the glass.' },
 ];
 
 export const FX_GAMES = [
@@ -364,6 +364,17 @@ export const DEFAULTS = {
   countdownLabel: '',         // custom mode only
   countdownDate: '',          // custom mode only, YYYY-MM-DD
   coins: 'bitcoin,ethereum,solana',
+
+  // The light switch's own state and where it sits, as percentages of the
+   // viewport so it lands in the same place on any monitor. Both belong to the
+   // scene rather than to the theme: turning the scene off leaves the lights
+   // where they were, and turning it back on picks them up again.
+  fxLights: false,
+  fxSwitch: { x: 50, y: 72 },
+  // How far the lights lift the wallpaper, as a percentage. The glass takes a
+  // fraction of this rather than the whole of it — matching them makes the
+  // panels look washed out well before the wallpaper looks bright.
+  fxLightLift: 114,
 
   // interactive background (pro). '' is none; anything else is an id in
   // js/fx/index.js SCENES. An unknown id resolves to nothing rather than
