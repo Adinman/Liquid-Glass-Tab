@@ -48,6 +48,60 @@ let refractSupported = true;
    write — microseconds, and it is on the critical path precisely because that
    is the path being fixed. */
 const WP_CACHE = 'lgt:wp';
+const LOCAL_POSTER = 'lgt:wp:poster';
+
+/** Frame 0 of the user's own video, as a data URL.
+ *
+ *  A packaged clip ships a poster; an uploaded one cannot, so the still layer
+ *  fell back to the gradient and every new tab showed a completely different
+ *  background before the video arrived. The frame is grabbed from the wallpaper
+ *  <video> itself the first time it decodes — no second element, no second
+ *  decode — and kept in localStorage rather than IndexedDB because the whole
+ *  point is to paint it before anything asynchronous has had a chance to run.
+ *
+ *  Keyed by wallpaperVideoName, which carries the file's name and size, so
+ *  choosing a different video invalidates it rather than showing the last
+ *  one's frame over the new one. */
+function readLocalPoster(name) {
+  try {
+    const v = JSON.parse(localStorage.getItem(LOCAL_POSTER) || 'null');
+    if (!v || v.name !== name) return null;
+    // Written by our own canvas, but it lands in a CSS url(), so it is checked
+    // rather than trusted: a data: URL of exactly the type we write, and
+    // nothing but base64 after it.
+    if (typeof v.url !== 'string') return null;
+    if (!/^data:image\/webp;base64,[A-Za-z0-9+/=]+$/.test(v.url)) return null;
+    return v.url;
+  } catch { return null; }
+}
+
+export function clearLocalPoster() {
+  try { localStorage.removeItem(LOCAL_POSTER); } catch {}
+}
+
+/** Draw the first frame of the live wallpaper and keep it. */
+function captureLocalPoster(video) {
+  if (S.wallpaperVideo !== 'local') return;
+  const name = S.wallpaperVideoName || '';
+  if (readLocalPoster(name)) return;                  // already have this one
+  if (!video.videoWidth || !video.videoHeight) return;
+  try {
+    const w = Math.min(1280, video.videoWidth);
+    const h = Math.max(1, Math.round(video.videoHeight * w / video.videoWidth));
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    c.getContext('2d').drawImage(video, 0, 0, w, h);
+    // Quality 0.7 keeps a 1280-wide frame near 40 KB, and base64 adds a third
+    // on top of that. localStorage has megabytes; this has to fit in one.
+    const url = c.toDataURL('image/webp', 0.7);
+    if (url.length > 900000) return;                  // absurdly large, skip it
+    localStorage.setItem(LOCAL_POSTER, JSON.stringify({ name, url }));
+    // The frame only exists once the video has decoded, which is after
+    // applyWallpaper has already painted the still layer. Repaint it now so
+    // this tab benefits too, rather than only the next one.
+    paintStill($('#wp-image'));
+  } catch { /* tainted canvas, quota, no webp encoder — the gradient still works */ }
+}
 
 function paintCachedWallpaper() {
   let v;
@@ -87,6 +141,9 @@ function paintCachedWallpaper() {
   } else if (v.url) {
     const safe = cssImageURL(v.url);
     if (safe) bg = `url("${safe}")`;
+  } else if (v.localVideo) {
+    const url = readLocalPoster(v.localVideo);
+    if (url) bg = `url("${url}")`;
   } else if (v.preset) {
     const w = WALLPAPERS.find(x => x.id === v.preset);
     if (w) bg = w.css;
@@ -130,6 +187,7 @@ function rememberWallpaper() {
   const clip = bundled(CLIPS, S.wallpaperVideo || '');
   const photo = bundled(PHOTOS, S.wallpaperCustom || '');
   if (clip) v.thumb = clip.id;
+  else if (S.wallpaperVideo === 'local') v.localVideo = S.wallpaperVideoName || '';
   else if (photo) v.photo = photo.id;
   else if (S.wallpaperCustom && /^https?:/i.test(S.wallpaperCustom)) v.url = S.wallpaperCustom;
   // An uploaded image lives in IndexedDB and cannot be read synchronously, so
@@ -271,7 +329,10 @@ function paintStill(node, { ignoreVideo = false } = {}) {
   if (video) {
     releaseLocalImage();
     const clip = bundled(CLIPS, video);
-    node.style.backgroundImage = clip ? `url("${clipPoster(clip.id)}")` : presetCSS();
+    const local = video === 'local' ? readLocalPoster(S.wallpaperVideoName || '') : null;
+    node.style.backgroundImage = clip ? `url("${clipPoster(clip.id)}")`
+      : local ? `url("${local}")`
+      : presetCSS();
   } else if (custom === 'local') {
     // Resolved asynchronously; whatever is on screen stays until the blob lands
     // rather than flashing the preset gradient in between.
@@ -395,12 +456,16 @@ function setRate(v) {
 function initVideoWallpaper() {
   const v = $('#wp-video');
   if (!v) return;
-  v.addEventListener('loadeddata', () => { v.classList.add('ready'); setRate(v); });
+  v.addEventListener('loadeddata', () => {
+    v.classList.add('ready');
+    setRate(v);
+    captureLocalPoster(v);
+  });
   // paintCachedWallpaper may have started the clip before this listener
   // existed. If it already has a frame, loadeddata has been and gone, and
   // without this the class is never added and the video stays invisible at
   // opacity 0 for good.
-  if (v.readyState >= 2) { v.classList.add('ready'); setRate(v); }
+  if (v.readyState >= 2) { v.classList.add('ready'); setRate(v); captureLocalPoster(v); }
   v.addEventListener('error', () => {
     v.classList.remove('ready');
     v.hidden = true;

@@ -5,7 +5,7 @@ import { WALLPAPERS, ENGINES, WIDGET_META, DEFAULTS, HOLIDAYS,
 import { countdownTarget } from './widgets/core.js';
 import { S, set, setWidget, resetAll, exportSettings, importSettings } from './state.js';
 import { applyTheme, applyVideoWallpaper, cssImageURL,
-         invalidateLocalImage, invalidateLocalVideo } from './theme.js';
+         invalidateLocalImage, invalidateLocalVideo, clearLocalPoster } from './theme.js';
 import { putBlob, delBlob, storageEstimate, fmtBytes,
          WALLPAPER_IMAGE_KEY, WALLPAPER_VIDEO_KEY } from './media.js';
 import { audio } from './audio.js';
@@ -948,6 +948,10 @@ async function pickVideo() {
       // Replacing an existing local video leaves the setting on 'local', so
       // the cached object URL has to be dropped or the old clip keeps playing.
       invalidateLocalVideo();
+      // The old video's frame is keyed by the old name, so it would simply be
+      // ignored — but there is no reason to leave a stale megabyte in
+      // localStorage when the video it belonged to is gone.
+      clearLocalPoster();
       await set({ wallpaperVideo: 'local', wallpaperVideoName: `${file.name} (${fmtBytes(file.size)})` });
       applyTheme();
       draw();
@@ -961,6 +965,7 @@ async function pickVideo() {
 
 async function clearVideo() {
   await delBlob(WALLPAPER_VIDEO_KEY).catch(() => {});
+  clearLocalPoster();
   await set({ wallpaperVideo: '', wallpaperVideoName: '' });
   applyTheme();
   draw();

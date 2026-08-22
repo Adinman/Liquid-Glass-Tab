@@ -757,9 +757,16 @@ thumbnail did this job first and was the wrong asset for it: 192x108 is right
 for a 64px swatch and a 10x upscale at 1920 wide, so a live wallpaper opened on
 a blurred smear that sharpened into video — which is what the flash still
 looked like after the *content* was already correct. At 1280 the stand-in is a
-1.5x upscale and the hand-off is invisible. A local or remote video has no
-shipped frame and falls back to the gradient, which is still a better stand-in
-than someone's photograph. If the video fails to load, the still layer is
+1.5x upscale and the hand-off is invisible. An uploaded video gets the same treatment without shipping anything: the first
+frame is grabbed from the wallpaper `<video>` itself the moment it decodes — no
+second element and no second decode — and kept as a WebP data URL in
+localStorage, around 50 KB. localStorage rather than IndexedDB because the
+whole point is to paint it before anything asynchronous has run. It is keyed by
+`wallpaperVideoName`, which carries the file's name and size, so choosing a
+different video falls back to the gradient and then re-captures rather than
+showing the previous video's frame over the new one. Removing the video removes
+it. A remote video URL still falls back to the gradient — the frame cannot be
+read back off a cross-origin video. If the video fails to load, the still layer is
 repainted with the real wallpaper — otherwise a dead clip leaves its poster
 stretched across the screen.
 
