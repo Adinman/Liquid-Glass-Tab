@@ -1,9 +1,9 @@
 // Turns settings into pixels: CSS variables, wallpaper, grain, and the
 // SVG displacement map that gives the glass its edge refraction.
-import { $, $$ } from './util.js';
+import { $ } from './util.js';
 import { setIconMode } from './icons.js';
 import { getBlob, WALLPAPER_IMAGE_KEY, WALLPAPER_VIDEO_KEY } from './media.js';
-import { WALLPAPERS } from './config.js';
+import { WALLPAPERS, PHOTOS, CLIPS, bundled, photoFile, clipFile, bgThumb } from './config.js';
 import { S } from './state.js';
 
 /* ---------- refraction map ----------
@@ -123,29 +123,79 @@ export function cssImageURL(raw) {
   } catch { return null; }
 }
 
-export function applyWallpaper() {
-  const node = $('#wp-image');
+/** Paint the still layer.
+ *
+ *  While a clip is the wallpaper this is deliberately NOT the stored photo.
+ *  `#wp-video` sits on top at opacity 0 and only fades in once it has decoded,
+ *  so for that window — every single new tab — the still layer is the only
+ *  thing on screen. Painting the photo there made every new tab flash an
+ *  unrelated picture before the video arrived.
+ *
+ *  A packaged clip already ships its own first frame: the picker thumbnail.
+ *  Using it makes the hand-off colour-matched and effectively invisible, for
+ *  about 3 KB that is already in the package. A local or remote video has no
+ *  such frame, and a neutral gradient is a better stand-in than a photograph.
+ *
+ *  The photo is only hidden, never forgotten — `wallpaperCustom` still holds
+ *  it, so turning the clip off brings it straight back.
+ *
+ *  `ignoreVideo` is for the case where the video failed: the still layer has
+ *  to go back to the real wallpaper rather than be left showing a 192x108
+ *  thumbnail stretched across the screen.
+ *
+ *  Longhands, not the `background` shorthand: the shorthand interacts badly
+ *  with the element's transition and leaves background-position at 0% 0%,
+ *  which crops photos from the top-left instead of the centre. */
+function paintStill(node, { ignoreVideo = false } = {}) {
   const custom = S.wallpaperCustom || '';
+  const video = ignoreVideo ? '' : (S.wallpaperVideo || '');
 
-  // Longhands, not the `background` shorthand: the shorthand interacts badly
-  // with the element's transition and leaves background-position at 0% 0%,
-  // which crops photos from the top-left instead of the centre.
-  if (custom === 'local') {
+  if (video) {
+    releaseLocalImage();
+    const clip = bundled(CLIPS, video);
+    node.style.backgroundImage = clip ? `url("${bgThumb(clip.id)}")` : presetCSS();
+  } else if (custom === 'local') {
     // Resolved asynchronously; whatever is on screen stays until the blob lands
     // rather than flashing the preset gradient in between.
     ensureLocalImage(node);
   } else {
     releaseLocalImage();
-    const safe = custom ? cssImageURL(custom) : null;
-    node.style.backgroundImage = safe ? `url("${safe}")` : presetCSS();
+    // A packaged still. The path is built from our own table, not from the
+    // stored string, so there is nothing here for cssImageURL to defend
+    // against — an id that isn't in the table simply isn't one of ours and
+    // falls through to the checks below.
+    const packed = bundled(PHOTOS, custom);
+    if (packed) {
+      node.style.backgroundImage = `url("${photoFile(packed.id)}")`;
+    } else {
+      const safe = custom ? cssImageURL(custom) : null;
+      node.style.backgroundImage = safe ? `url("${safe}")` : presetCSS();
+    }
   }
   node.style.backgroundSize = 'cover';
   node.style.backgroundPosition = 'center';
   node.style.backgroundRepeat = 'no-repeat';
+}
+
+export function applyWallpaper() {
+  const node = $('#wp-image');
+  paintStill(node);
 
   document.documentElement.dataset.wp =
     S.wallpaperVideo ? 'video' : S.wallpaperCustom ? 'custom' : 'preset';
-  document.documentElement.style.setProperty('--wp-dim', ((S.videoDim ?? 0) / 100).toFixed(2));
+  // The dim belongs to whichever layer is actually on screen. This used to be
+  // videoDim unconditionally, which put a 25% black sheet over a photo — every
+  // pixel multiplied by 0.75 — from a slider that lives under Live wallpaper
+  // and is documented as darkening video. A photo now shows as it is unless
+  // you ask for otherwise.
+  //
+  // A gradient deliberately keeps the old behaviour. The presets were designed,
+  // shipped and screenshotted with that dim on them, and quietly brightening
+  // all ten of them is not a bug fix.
+  const dim = S.wallpaperVideo ? (S.videoDim ?? 0)
+    : S.wallpaperCustom ? (S.stillDim ?? 0)
+    : (S.videoDim ?? 0);
+  document.documentElement.style.setProperty('--wp-dim', (dim / 100).toFixed(2));
 
   // Light presets want dark text.
   const light = !S.wallpaperCustom && !S.wallpaperVideo && ['dawn', 'paper'].includes(S.wallpaper);
@@ -199,6 +249,10 @@ export async function applyVideoWallpaper() {
     src = objectURL;
   } else {
     invalidateLocalVideo();
+    // A packaged clip: a plain extension-relative path, so no object URL to
+    // mint or revoke, and Chrome caches the one decode across tabs.
+    const packed = bundled(CLIPS, want);
+    if (packed) src = clipFile(packed.id);
   }
 
   if (v.dataset.src !== src) {
@@ -223,7 +277,14 @@ function initVideoWallpaper() {
   const v = $('#wp-video');
   if (!v) return;
   v.addEventListener('loadeddata', () => { v.classList.add('ready'); setRate(v); });
-  v.addEventListener('error', () => { v.classList.remove('ready'); v.hidden = true; });
+  v.addEventListener('error', () => {
+    v.classList.remove('ready');
+    v.hidden = true;
+    // The still layer is currently standing in for the video's first frame.
+    // With the video dead it has to go back to the actual wallpaper, or a
+    // failed clip leaves a 192x108 thumbnail stretched over the whole screen.
+    paintStill($('#wp-image'), { ignoreVideo: true });
+  });
 
   // Decoding video in a tab you're not looking at wastes battery for nothing.
   document.addEventListener('visibilitychange', () => {
@@ -258,4 +319,3 @@ export function attachSheen(panel) {
   panel.prepend(s);
 }
 
-export function refreshAllSheens() { $$('.glass').forEach(attachSheen); }

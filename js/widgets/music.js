@@ -305,6 +305,14 @@ export const spotify = {
    place as that range gets louder — bass on the left, treble on the right.
    Mirrored about the centre line. Bare by design: no panel, no header, no
    controls. Everything configurable lives in Settings → Music. */
+/** Keep only what the lyrics widget actually reads — see the cache note above. */
+function trimLyrics(d) {
+  if (!d || typeof d !== 'object') return null;
+  if (d.syncedLyrics) return { syncedLyrics: d.syncedLyrics };
+  if (d.plainLyrics) return { plainLyrics: d.plainLyrics };
+  return null;
+}
+
 export const visualizer = {
   id: 'visualizer', title: 'Visualizer', className: 'w-viz', bare: true,
   render(panel) {
@@ -317,7 +325,19 @@ export const visualizer = {
     // Checked every frame rather than on a ResizeObserver: render() runs while
     // the panel is still detached, so any size measured here would be zero.
     function ensureSize() {
-      const dpr = devicePixelRatio || 1;
+      // The widget's size setting is a CSS zoom on the panel, and zoom does
+      // not change clientWidth — that stays in the panel's own pixels. Fold it
+      // in or the backing store keeps the 100% size and a scaled-up
+      // visualiser is drawn small and stretched across the canvas.
+      //
+      // Taken from the element rather than from settings, because the two
+      // disagree for the length of a resize drag: the grip applies the zoom on
+      // every pointermove and only writes the setting on release, so reading
+      // settings would leave the canvas blurred until you let go. Reading an
+      // inline style is a string parse, not a layout read — clientWidth below
+      // is the one that costs, and it was already here.
+      const zoom = parseFloat(panel.style.zoom) || 1;
+      const dpr = (devicePixelRatio || 1) * zoom;
       const w = Math.max(1, Math.round(canvas.clientWidth * dpr));
       const h = Math.max(1, Math.round(canvas.clientHeight * dpr));
       if (canvas.width === w && canvas.height === h) return;
@@ -523,7 +543,22 @@ export const visualizer = {
     }
 
     raf = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(raf);
+    return () => {
+      cancelAnimationFrame(raf);
+      // Release the capture, but only if the widget was switched OFF rather
+      // than merely rebuilt. Nothing else does this: audio.stop() is otherwise
+      // only reached by a track ending or by choosing Simulated, so turning the
+      // visualiser off used to leave the AudioContext open and — with System or
+      // Tab audio — the capture still running, with Chrome's sharing indicator
+      // still up for a widget that is no longer on screen.
+      //
+      // The `on` check is what makes this safe. rebuildWidgets() tears every
+      // widget down on any widget toggle, and a capture cannot be restarted
+      // without a fresh user gesture, so stopping unconditionally would kill a
+      // running capture whenever an unrelated widget was switched on or off.
+      // setWidget() has already written the new value by the time this runs.
+      if (!S.widgets?.visualizer?.on && audio.live) audio.useSim();
+    };
   },
 };
 
@@ -572,12 +607,29 @@ export const lyrics = {
       empty('Looking for lyrics…');
 
       const q = new URLSearchParams({ artist_name: artist, track_name: name, album_name: album, duration: dur });
-      let { data } = await cachedFetch('lrc:' + key, 'https://lrclib.net/api/get?' + q, { ttl: 30 * 864e5 });
+      // Cache only the two fields this widget reads. LRCLIB's response carries
+      // the whole track record plus BOTH plainLyrics and syncedLyrics, and this
+      // is stored per track for 30 days — measured at ~3.5 KB an entry. When
+      // synced lyrics exist the plain copy is never looked at, so it is dropped
+      // rather than stored. Old entries still work: they have these fields too.
+      let { data } = await cachedFetch('lrc:' + key, 'https://lrclib.net/api/get?' + q,
+        { ttl: 30 * 864e5, transform: trimLyrics });
 
       if (!data) {
         const q2 = new URLSearchParams({ artist_name: artist, track_name: name });
-        const res = await cachedFetch('lrcs:' + key, 'https://lrclib.net/api/search?' + q2, { ttl: 7 * 864e5 });
-        data = Array.isArray(res.data) ? res.data.find(r => r.syncedLyrics) || res.data[0] : null;
+        // The search endpoint returns an array of candidates, each carrying its
+        // own full set of lyrics. Picking the one record that gets used *before*
+        // it is written turns N copies of a song's lyrics into one.
+        const res = await cachedFetch('lrcs:' + key, 'https://lrclib.net/api/search?' + q2, {
+          ttl: 7 * 864e5,
+          transform: arr => Array.isArray(arr)
+            ? trimLyrics(arr.find(r => r.syncedLyrics) || arr[0])
+            : trimLyrics(arr),
+        });
+        // Tolerate an entry cached by an older build, which is still the raw array.
+        data = Array.isArray(res.data)
+          ? (res.data.find(r => r.syncedLyrics) || res.data[0] || null)
+          : res.data;
       }
 
       if (!data) { status.textContent = 'not found'; return empty('No lyrics found for this track.'); }

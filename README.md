@@ -284,6 +284,20 @@ layout, then drag. Positions are stored as percentages so they survive resizing.
 Hold <kbd>Alt</kbd> to drag without unlocking. **⚙ → Widgets → Reset layout**
 puts everything back.
 
+**Resize any panel.** In the same edit mode a ⤡ grip appears at the
+bottom-right corner of every widget: drag it out to grow, in to shrink,
+double-click it for 100%. Range is 50–200%. Every widget also has a size
+slider under **⚙ → Widgets**, next to its on/off switch, for when you want a
+number rather than a gesture. Sizes reset along with positions.
+
+Resizing scales the whole panel — text, padding, icons and artwork together —
+rather than only stretching its width, so a bigger news panel gets bigger
+headlines instead of longer lines. The widgets that size themselves to their
+content (weather, news, lyrics, notes, the quote) keep doing so: they re-wrap
+and re-lay out at the new scale rather than being stretched, so text stays
+sharp at any size, and the quote widget's reserved two lines stay two lines
+because the ratio of text size to panel width never changes.
+
 ### Private search
 
 Four ways in, because the whole point is that it's quicker than opening a
@@ -359,6 +373,44 @@ it at a different folder, **+** follows.
 
 **Auto-hide** slides the dock off-screen until you push the cursor into a 26px
 strip along that edge.
+
+### Backgrounds
+
+**⚙ → Look → Wallpaper** has three rows. Ten gradients, then five photos,
+then three looping clips under **Live wallpaper**. The photos and clips are
+packaged inside the extension — no network request, no host permission,
+nothing added to the store's data disclosure, and nothing to go wrong offline.
+Your own image or video still goes in the same place it always did.
+
+Picking a still turns off a running clip. The video layer sits on top of the
+still one, so choosing a wallpaper underneath a playing clip would change
+nothing you can see and read as a dead button. Nothing is thrown away — a
+local clip stays in IndexedDB, a packaged one is a file, so re-picking either
+is one click.
+
+Photos are Pexels, clips are Pixabay; both licences permit bundling and neither
+requires attribution, though the credit is in each swatch's tooltip anyway.
+
+**Formats were chosen by measurement, not by reputation.** Stills are AVIF q65
+and clips are AV1 CRF 40, and both were picked by re-encoding the originals and
+scoring the result against them:
+
+| | before | after | quality |
+|---|---|---|---|
+| 3 clips | 15.21 MB H.264 CRF 26 | **4.70 MB** AV1 CRF 40 | SSIM up on all three |
+| 5 stills | 2099 KB WebP q80 | **1620 KB** AVIF q65 | decode 0.69x, i.e. faster |
+
+Both were smaller *and* better, which is not the usual shape of a codec
+trade and is why they were worth measuring. Two levers that looked obvious and
+measured out worthless: halving the clips' frame rate saved 11% for visibly
+choppier motion, and downscaling to 1280 wide cost more quality than switching
+codec saved. AV1's catch is decode support — H.264 has universal hardware
+decode where AV1 wants roughly Intel 11th gen / RTX 30 / RDNA2 and falls back
+to software below that. Contained because a live wallpaper is opt-in and pauses
+when the tab is hidden. VP9 CRF 36 is the hedge at 8.29 MB with wider hardware
+support.
+Regenerate the files from their originals with
+`python assets/make_backgrounds.py --images DIR --videos DIR`.
 
 ### Live wallpaper (video)
 
@@ -570,9 +622,19 @@ and one URI covers both.
 
 ### Two manifest gotchas that cost me time
 
-> **Never give a root-level file or folder a name starting with `_`.** Chrome
-> reserves those and will refuse to load the extension with
+> **Never give a file or folder a name starting with `_`, at any depth.**
+> Chrome reserves those and will refuse to load the extension with
 > *"Filenames starting with `_` are reserved for use by the system."*
+> Only `_locales` and `_metadata` are allowed.
+>
+> This applies to the whole folder, not just to what ships. "Load unpacked"
+> makes Chrome scan everything, so a file the zip excludes still breaks it — and
+> excluded files are exactly the ones nothing else complains about. A stray
+> `assets/__pycache__/`, created merely by *importing* one of the generator
+> scripts, did it: `.gitignore` hides it so `git status` is clean, `package.py`
+> excludes it so the zip is perfect, and the extension will not load at all.
+> `check_unpacked_tree()` in `package.py` now walks the whole tree for this and
+> refuses to build.
 
 > **Do not delete the `web_accessible_resources` entry for `_favicon/*`.** It
 > looks redundant next to the `favicon` permission, but the favicon API needs
@@ -640,6 +702,73 @@ quantisation error against the old 512² map is 0.33 px worst case — invisible
 11% of samples over a pixel. 256² has a 3× margin. Note the decoded cost is
 what matters, not the file: the 512² map was 1 MB decoded from an 11 KB string.
 
+**While a clip plays, the still layer shows the clip's own first frame.**
+`#wp-video` sits above `#wp-image` at opacity 0 and only fades in once it has
+decoded, so for that window — on every single new tab — the still layer is the
+only thing on screen. Since a photo stays *stored* underneath a clip (so
+turning the clip off restores it), painting it there made every new tab flash
+an unrelated picture before the video arrived. The picker thumbnail is already
+the clip's first frame, so it stands in: colour-matched, invisible hand-off,
+and about 3 KB that was in the package anyway. A local or remote video has no
+shipped frame and falls back to the gradient, which is still a better stand-in
+than someone's photograph. If the video fails to load, the still layer is
+repainted with the real wallpaper — otherwise a dead clip leaves a 192x108
+thumbnail stretched across the screen.
+
+**Turning the visualiser off releases the audio capture.** `audio.stop()` is
+otherwise only reached by a track ending or by picking *Simulated*, so
+switching the widget off left the AudioContext open and, with System or Tab
+audio, the capture still running — with Chrome's sharing indicator still up for
+a widget that was no longer on screen. The teardown checks
+`S.widgets.visualizer.on` before releasing, and that check is the whole point:
+`rebuildWidgets()` tears every widget down whenever *any* widget is toggled,
+and a capture cannot be restarted without a fresh user gesture, so an
+unconditional stop would kill a running capture every time an unrelated widget
+was switched on or off.
+
+**<kbd>W</kbd> turns the live wallpaper off too.** Cycling only the layer
+underneath a playing video changed nothing you could see, while still clearing
+the photo selection and announcing a name in a toast — an inert key that quietly
+threw a setting away.
+
+**A photo is shown as it is; only video is dimmed by default.** The `Dim`
+control under Live wallpaper darkens video so widgets stay readable over busy
+footage, and it used to be applied to every layer unconditionally — so a photo
+wallpaper arrived with a 25% black sheet over it, every pixel multiplied by
+0.75, from a slider in a section about video. Photos now have their own **⚙ →
+Look → Dim**, default 0. Turn it up if white widget text is hard to read over a
+bright picture.
+
+The ten gradients deliberately keep the old behaviour. They were designed,
+shipped and screenshotted with that dim on them, and quietly brightening all
+ten of them is not a bug fix.
+
+**Packaged backgrounds are files, and that is the whole point.** A still is
+`width × height × 4` bytes once decoded, and that number has nothing to do
+with its file size — the 8301×5534 source in this set is 900 KB on disk and
+175 MB decoded, the smallest file of the five and by far the largest in
+memory. Three things follow, and `assets/make_backgrounds.py` exists to keep
+all three true:
+
+- **Crop to 16:9 before resizing, don't just scale.** They are drawn with
+  `background-size: cover`, so on a 16:9 screen anything outside that crop is
+  decoded and then discarded. One source is a 2268×4032 portrait: scaled to
+  cover 1080p it is 1920×3413, of which 2333 rows are off screen. Cropping
+  first is 7.9 MB decoded instead of 25 MB.
+- **Ship them as packaged files, not through the IndexedDB blob path.** A
+  packaged file has one URL and Chrome shares its decode across every open
+  tab; `URL.createObjectURL` in `theme.js` runs per page, so the same picture
+  loaded that way can cost its decode once per tab.
+- **The picker draws separate thumbnails.** It shows every background at once,
+  so pointing those swatches at the full-size files would decode ~8 MB apiece
+  to fill a grid of 64px squares. `assets/bg/thumbs/` is 192×108, about 3 KB
+  and 83 KB decoded each.
+
+Clips are re-encoded at CRF 26 with their audio streams dropped. One source
+arrived at 16.1 Mbps, which is broadcast-grade for something that plays
+silently behind an 18px blur, and the `<video>` is muted and looping, so every
+audio byte is weight in a package every user downloads.
+
 **`background-size: 220px` on `#wp-grain` must match the tile.** Change one
 without the other and the noise is resampled — coarser and blurrier.
 
@@ -649,6 +778,24 @@ wallpaper as a base64 data URL made one write cost 11.4 ms against 0.1 ms
 without it, held 6 MB per open tab, and was re-serialised on every slider
 frame. Images and videos live in IndexedDB (`js/media.js`); settings hold
 `'local'`. `js/state.js` migrates any leftover data URL on load.
+
+**The response cache is bounded, because a TTL is not an eviction policy.**
+`cachedFetch` writes one `cache:` entry per key and its TTL only decides when a
+value is *stale* — a key that is never requested again is never deleted. Fine
+for weather and news, which reuse a handful of fixed keys; not fine for lyrics,
+which key per track. Measured on a real LRCLIB response, one entry carried
+~1,100 characters of `plainLyrics` plus ~2,200 of `syncedLyrics`, about 3.5 KB,
+so twenty new tracks a day came to roughly 25 MB a year that only grew.
+
+Two fixes, both measured. Only the fields the widget reads are cached now, and
+the plain copy is dropped when synced lyrics exist: 3,769 → 2,399 bytes for a
+`/get` entry (−36%), and 8,931 → 2,399 for a `/search` entry (−73%, because
+that endpoint returns an array of candidates each carrying a full set of
+lyrics, and only one of them is ever used). Then `background.js` prunes to the
+400 newest `cache:` entries on its existing alarm — bounding the whole cache at
+about 1 MB. The prune lives in the service worker because enumerating every
+key is far too expensive to put near the new-tab path, and it sorts oldest
+first so the entries the alarm just warmed are the last to go.
 
 **Settings writes are coalesced** (`js/state.js`). `S` updates synchronously,
 only the disk trip is deferred, and a max-wait bounds the delay. A three-second
@@ -678,6 +825,130 @@ match it. The same applied to the vocal-presence follower.
 progress bar and clock only change a few times a second; the dock's transforms
 are unchanged at rest. Each redundant write still costs a style invalidation.
 
+**Clamping recovers from intent on both axes, and a click is not a drag.**
+Three separate things made a layout look scrambled after the window changed
+size and changed back:
+
+- Horizontal clamping measured from where a panel *currently* was, so it only
+  ever pulled inward. Narrow the window and everything is shoved left; widen it
+  again and it all stays there, because the position it was pushed away from was
+  never written down. `dataset.ax` now records the intended x exactly as
+  `dataset.ay` records the intended y, and clamping resolves from that.
+- Nudging a centre-anchored panel cleared its `translateX(-50%)`, permanently
+  un-centring the clock and the search bar the first time the window was too
+  narrow for them. Centred panels are skipped horizontally instead — they
+  overflow symmetrically, which keeps the part you read in the middle of the
+  screen, and they recentre themselves the moment there is room.
+- `pointerdown` on a panel converts it from centre-anchored to absolutely
+  positioned so it can be dragged, and `pointerup` used to persist that
+  unconditionally. Clicking a panel in edit mode without moving it therefore
+  dropped its anchor and marked it `placed` — nothing moved, so there was
+  nothing to see, and from then on the clock no longer recentred. Both writes
+  are rolled back now unless the pointer actually travels more than 3px. The
+  settings panel had the identical bug: one stray click on its header pinned it
+  to an absolute pixel column for good.
+
+**Widgets anchor to what they are nearest, and keep that distance in pixels.**
+Positions are stored as percentages, and a percentage of the viewport is the
+wrong thing to resolve them against on its own: widget heights are fixed
+pixels, so the gaps between widgets stretch with the window while the widgets
+do not. That is what made a resize look scrambled — some widgets tracked the
+window, others got pushed and stopped tracking, and which was which changed
+with the window height.
+
+So each widget picks an anchor from whatever it sits closest to, and keeps its
+gap to that:
+
+| nearest thing | behaviour |
+|---|---|
+| the dock | keeps its gap above the dock, and follows it |
+| a widget above it | keeps its gap below that widget, and follows it |
+| the top of the screen | keeps its distance from the top |
+| a side edge | keeps its distance from that edge, left or right |
+
+Anchors are only ever chosen upward — to the dock, an edge, or a widget *above*
+— so the graph has no cycles and one ordered pass resolves it.
+
+**Top-or-dock is decided by the widget's top edge, not by the smaller gap.**
+Comparing the two gaps sends every tall widget to the dock: the weather panel is
+most of a column, so its bottom is near the dock however high its top starts,
+and it would then slide downward on entering fullscreen while its top pulled
+away from the top of the screen. Asking which half the top edge sits in gives
+the answer you would give looking at it — that one starts up there, so it stays
+up there.
+
+
+A gap in pixels needs a size to have been measured at, so every widget records
+the viewport it was arranged in (`vw`/`vh`, written on drop). Anything never
+moved resolves against `CANON` in `config.js`. That is 1920x1080 rather than
+something smaller because the default visualiser sits at x=74% and is 440px
+wide, so it needs a 1786px viewport before it fits at all — resolving the
+shipped defaults against a width they overflow pushed the right-hand column off
+the edge before anything else had a chance to go wrong.
+was arranged for. Measured, resizing 900 to 1080:
+
+| widget | anchor | 900 | 1080 |
+|---|---|---|---|
+| weather | top | 72px | 72px |
+| clock | top | 144px | 144px |
+| news (placed near the dock) | dock | 36px above it | 36px above it |
+
+Nothing stretches, and the widget by the dock follows the dock down.
+
+**Resolved positions are written in pixels, divided by the panel's own zoom.**
+The pass has already decided the exact position, and a percentage would be
+re-resolved by the browser against the new viewport the moment it changes —
+reintroducing the stretch between the resize and the next pass. Pixels hold
+still until the pass corrects them.
+
+But `left`/`top` resolve in the element's *zoomed* coordinate space, so a pixel
+written raw gets multiplied by the zoom again on the way to the screen. At a fit
+of 0.6 that put the whole layout in the top-left corner at 0.6x its intended
+offsets — six overlapping widgets crammed into the top third of a 1080px window
+— while percentages had been immune to this all along. It is the same trap as
+`offsetWidth` versus `getBoundingClientRect` in the widget-size note above, and
+a reminder that changing a unit can silently opt into it. The drag handler still
+writes percentages, so the stored intent is unaffected either way.
+
+**Fit considers width as well as height.** Three columns of fixed-width widgets
+do not fit in a half-width window, and without the width term they kept their
+full size and landed on each other. It is measured across the arrangement's
+whole span rather than per widget, so the columns keep their proportions.
+
+
+Layout runs on `resize`, on `fullscreenchange`, and on a `ResizeObserver`
+watching the root element, because entering fullscreen and some window
+managers do not always deliver a `resize` when you would expect one.
+
+**Widgets are never scaled up, only shrunk to fit.** An earlier attempt scaled
+with the window in both directions and keyed off *width*, which made a wide
+short window bigger in the one dimension that had no room. Enlarging does not
+suit every widget either — a bigger clock is fine, a bigger news list is just a
+news list with fewer stories visible. **⚙ → Widgets → Shrink to fit** turns the
+shrinking half on and off; anchoring runs either way.
+
+**The dock shrinks with the widgets.** The fit factor is published as `--fit` on
+`:root`, and `--dock-size` is multiplied by it in CSS while `dock.js` reads the
+same value for its hover maths. A dock left at full size next to shrunk widgets
+is the most obvious thing wrong with a squeezed layout.
+
+The fit factor and a widget's own size are multiplied but never merged. The
+stored size stays exactly what you set — folding the fit factor into it would
+mean every resize silently rewrote your settings — so the resize grip solves in
+stored-size space and divides the pointer delta back through the factor.
+
+**Overlap resolution stays as a safety net.** Anchoring keeps the arrangement,
+but a widget that grew since it was placed can still land on its neighbour, so
+anything still colliding after anchoring is pushed clear.
+
+**The settings panel remembers a ratio, not a column.** Its x is stored as a
+fraction of the free space (0 flush left, 1 flush right), because an absolute x
+is only correct at the width it was recorded at. Drag it near the right edge at
+1280px and an absolute x of ~870 gets written down; press F11 and at 1920px that
+column is nowhere near the right edge, so the panel appears stranded towards the
+middle. A ratio keeps a right-docked panel docked right at every width, and
+resize re-resolves it rather than just dragging the old column back on screen.
+
 **The drag handler and `clampPanel` must agree, via `layoutBounds()`.** They
 used to disagree — dragging allowed 4px from every edge while clamping reserved
 room for the dock — so a panel could be dropped up to 94px lower than clamping
@@ -694,6 +965,33 @@ overrule a deliberate drag. `placed` is set on drop and cleared by **⚙ →
 Widgets → Reset layout**, which must also restore `anchor` — resetting only
 x/y left a dragged clock at `anchor:null` and therefore half its width
 off-centre.
+
+**Widget size is a CSS `zoom`, not a `transform: scale`.** Measured in Chrome,
+with a control alongside that proves the test can actually see a broken
+backdrop — a parent with `filter` or `opacity < 1` renders the glass flat, and
+did in the same run:
+
+- `zoom` is not a backdrop root, so a scaled panel still samples the wallpaper;
+- a percentage `left`/`top` resolves to the same pixel zoomed or not, because
+  the percentage is resolved in the element's own scaled space and scaled back.
+  Measured, a centre-anchored clock at 100% and at 150% has its centre on the
+  same pixel, so no stored position needs recomputing when the size changes;
+- the layout box genuinely changes, so auto-height widgets keep sizing to
+  their content and text is re-laid out rather than resampled.
+
+`transform: scale` fails the last two: it grows about the panel's centre, which
+walks a positioned panel off its anchor, and it leaves `offsetWidth` reporting
+the unscaled box — which is exactly what the drag maths measures.
+
+The catch to remember is that `offsetWidth`/`offsetHeight` are in the panel's
+own pixels and ignore its zoom, while `getBoundingClientRect()` is in real
+ones. Anything measuring a panel against the viewport has to multiply by the
+zoom — the drag handler does. `clampPanel` already worked unchanged because it
+measures with the rect. The visualiser's canvas has to fold the zoom into its
+`devicePixelRatio` or the backing store keeps the 100% size and a scaled-up
+spectrum is drawn small and stretched; it reads the zoom off the element rather
+than out of settings, because the grip applies the zoom on every pointermove
+and only writes the setting on release.
 
 **Measure a panel before clearing its transform, not after.**
 `getBoundingClientRect()` includes transforms, and centre-anchored panels (the
@@ -733,6 +1031,25 @@ slower than toggling one class. Same trap anywhere a hover changes a selection.
   so two refreshes racing meant the second presented a spent token — and the
   old code responded by disconnecting. Only a 400/401 clears tokens now; a 5xx
   or a dropped connection is retried later.
+
+### Two background gotchas, if you go editing the wallpaper picker
+
+> **A background image is positioned against the padding box but painted across
+> the border box.** The swatches carry `border: 2px solid transparent` so that
+> selecting one can just set `border-color`. With the default
+> `background-repeat: repeat`, `cover` sized each image to the padding box and
+> Chrome filled the leftover 2px ring by *tiling* it — so every unselected
+> swatch showed a thin wrapped-around sliver of its own opposite edge, an image
+> overlaid on the image. Selecting one hid the symptom, because the white border
+> painted straight over the sliver, which is what made it confusing to spot.
+> `background-origin: border-box` plus `no-repeat` leaves nothing to tile.
+
+> **`background:` is a shorthand and resets every longhand it doesn't mention.**
+> The gradient swatches set `style.background`, which silently put
+> `background-origin` and `background-repeat` back to their initial values and
+> undid the fix above for exactly those ten swatches. They set
+> `style.backgroundImage` now. The same trap is why `applyWallpaper` in
+> `js/theme.js` writes longhands rather than the shorthand.
 
 ### A note on the glass, if you go editing CSS
 

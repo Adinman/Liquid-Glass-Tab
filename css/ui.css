@@ -381,7 +381,46 @@ select.dp-field option { background: #1a1d28; color: #fff; }
 .btn.danger { color: #ff8a94; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .wp-swatches { display: grid; grid-template-columns: repeat(5, 1fr); gap: 7px; }
-.wp-sw { height: 44px; border-radius: 11px; cursor: pointer; border: 2px solid transparent; }
+/* The 2px border is transparent until selected, and a background image is
+   positioned against the padding box but painted across the border box. With
+   the default `background-repeat: repeat` that 2px ring got filled by tiling
+   the image, so every unselected swatch showed a thin wrapped-around sliver of
+   its own opposite edge - an image overlaid on the image. Selecting one hid it,
+   because `.on` paints an opaque white border straight over the sliver.
+   Covering the border box instead leaves nothing to tile. */
+.wp-sw {
+  height: 44px; border-radius: 11px; cursor: pointer; border: 2px solid transparent;
+  background-origin: border-box; background-repeat: no-repeat;
+}
 .wp-sw.on { border-color: #fff; }
+/* Packaged backgrounds draw their own thumbnail file. */
+/* Image swatches take the thumbnail's own 16:9 shape. At the gradient row's
+   fixed 44px they were 65x44, so `cover` cropped ~16% off the sides and the
+   swatch showed a centre slice rather than the picture you were choosing. */
+.wp-sw.wp-img {
+  background-size: cover; background-position: center;
+  height: auto; aspect-ratio: 16 / 9;
+}
+.wp-sw.wp-clip { position: relative; }
+/* Play marker, drawn rather than typed.
+   It used to be a unicode escape for the triangle glyph, which is two
+   hazards in one: the escape has to survive every layer that writes the
+   file (it did not - it arrived as a raw 0x15 control byte, so the swatch
+   showed a tofu box and a leftover "B6"), and even written correctly it
+   depends on the font shipping that glyph. Borders need neither. */
+.wp-sw.wp-clip::before {
+  content: ""; position: absolute; top: 50%; left: 50%;
+  width: 22px; height: 22px; margin: -11px 0 0 -11px;
+  border-radius: 50%; background: rgba(0, 0, 0, .42);
+}
+.wp-sw.wp-clip::after {
+  content: ""; position: absolute; top: 50%; left: 50%;
+  width: 0; height: 0; margin: -6px 0 0 -3px;
+  border-left: 9px solid rgba(255, 255, 255, .96);
+  border-top: 6px solid transparent;
+  border-bottom: 6px solid transparent;
+}
+/* Sub-heading inside a settings group, for a second row of swatches. */
+.set-sub { font-size: 11px; color: var(--text-faint); margin: 12px 0 6px; }
 .code { font-family: ui-monospace, Consolas, monospace; font-size: 11px; background: hsl(0 0% 100% / .1);
   padding: 7px 9px; border-radius: 8px; word-break: break-all; user-select: text; line-height: 1.5; }

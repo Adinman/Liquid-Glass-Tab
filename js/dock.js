@@ -353,7 +353,12 @@ function tick(now) {
   anim.last = now;
   const ease = 1 - Math.exp(-dt / EASE_TAU);
 
-  const size = S.dockSize || 56;
+  // Scaled by the layout pass's fit factor, the same one the CSS applies to
+  // --dock-size. Reading an inline custom property is a string lookup, not a
+  // layout read, so it is safe in this per-frame loop — and taking it from
+  // the DOM rather than caching it means it can never go stale on resize.
+  const fit = parseFloat(document.documentElement.style.getPropertyValue('--fit')) || 1;
+  const size = (S.dockSize || 56) * fit;
   const maxScale = S.dockMagnify || 1.55;
   const px = anim.pointerX;
 

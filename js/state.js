@@ -1,5 +1,5 @@
 // Settings state: load, patch, persist, notify.
-import { DEFAULTS, ENGINES } from './config.js';
+import { DEFAULTS, ENGINES, WIDGET_SIZE, PHOTOS, CLIPS, bundled } from './config.js';
 import { store } from './util.js';
 import { putBlob, WALLPAPER_IMAGE_KEY } from './media.js';
 
@@ -158,6 +158,19 @@ export function exportSettings() {
   }, null, 2);
 }
 
+/** A finite number inside [min,max], or the fallback.
+ *
+ *  Deliberately not just Number(v): null, '', false and [] all coerce to 0,
+ *  which is finite, so a widget arriving with `size: null` would be clamped to
+ *  the minimum — a 50% widget — rather than left at the default. Absent and
+ *  malformed have to mean "use the default", not "use the smallest legal
+ *  value". Only a real number or a non-blank numeric string counts. */
+const inRange = (v, min, max, fallback) => {
+  const n = typeof v === 'number' ? v
+    : (typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN);
+  return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
+};
+
 const isHttpURL = u => {
   try { return /^https?:$/.test(new URL(String(u)).protocol); } catch { return false; }
 };
@@ -181,13 +194,18 @@ function sanitize(s) {
     s.feeds = structuredClone(DEFAULTS.feeds);
   }
 
+  // `bg:<id>` is a packaged background. It is accepted only when the id is
+  // actually in the registry: the id reaches a file path, so an unchecked one
+  // is a path traversal dressed up as a settings value.
   const wp = s.wallpaperCustom;
-  if (typeof wp !== 'string' || !(wp === '' || wp === 'local' || wp.startsWith('data:') || isHttpURL(wp))) {
+  if (typeof wp !== 'string' || !(wp === '' || wp === 'local' || bundled(PHOTOS, wp)
+      || wp.startsWith('data:') || isHttpURL(wp))) {
     s.wallpaperCustom = '';
   }
   // Same for the video, which becomes a <video src>.
   const vid = s.wallpaperVideo;
-  if (typeof vid !== 'string' || !(vid === '' || vid === 'local' || isHttpURL(vid))) {
+  if (typeof vid !== 'string' || !(vid === '' || vid === 'local' || bundled(CLIPS, vid)
+      || isHttpURL(vid))) {
     s.wallpaperVideo = '';
   }
 
@@ -211,7 +229,50 @@ function sanitize(s) {
   // '' is meaningful here: it means "use whichever engine is normally selected".
   if (s.searchIncognitoEngine && !ENGINES[s.searchIncognitoEngine]) s.searchIncognitoEngine = '';
 
-  if (typeof s.widgets !== 'object' || s.widgets === null) s.widgets = {};
+  // Widget entries are the third thing an import reaches past the UI: `size`
+  // becomes a CSS zoom on the panel, so an unchecked value is either NaN (the
+  // widget vanishes) or big enough to cover the screen — including the
+  // settings button that would undo it. x/y are percentages of the viewport;
+  // clampPanel would eventually drag a wild one back on screen, but there is
+  // no reason to store it in the first place.
+  // Anything but 'window' means fixed, so a junk import cannot invent a mode.
+  if (s.widgetScaleMode !== 'window' && s.widgetScaleMode !== 'fixed') {
+    s.widgetScaleMode = DEFAULTS.widgetScaleMode;
+  }
+  // The settings panel position reaches inline left/top/height. A ratio outside
+  // 0..1, or a negative height, would park the panel off-screen with no way to
+  // drag it back, so a bad one is dropped rather than clamped into something
+  // that looks deliberate.
+  const sp = s.settingsPos;
+  if (sp && typeof sp === 'object' && !Array.isArray(sp)) {
+    const okX = Number.isFinite(sp.fx) ? sp.fx >= 0 && sp.fx <= 1 : Number.isFinite(sp.x);
+    if (!okX || !Number.isFinite(sp.y) || !(sp.h > 120)) s.settingsPos = null;
+  } else if (sp) {
+    s.settingsPos = null;
+  }
+
+  if (typeof s.widgets !== 'object' || s.widgets === null) {
+    s.widgets = {};
+  } else {
+    for (const [id, w] of Object.entries(s.widgets)) {
+      if (!w || typeof w !== 'object' || Array.isArray(w)) { delete s.widgets[id]; continue; }
+      const d = DEFAULTS.widgets[id] || {};
+      s.widgets[id] = {
+        on: !!w.on,
+        x: inRange(w.x, 0, 100, d.x ?? 10),
+        y: inRange(w.y, 0, 100, d.y ?? 10),
+        size: inRange(w.size, WIDGET_SIZE.min, WIDGET_SIZE.max, WIDGET_SIZE.default),
+        // The viewport a drag was made in. Absent means "never moved", which
+        // resolves against CANON instead. A junk value would put the whole
+        // anchored layout at the wrong scale, so it is bounded to sizes a real
+        // window can be rather than merely to "a number".
+        vw: inRange(w.vw, 240, 16384, 0) || undefined,
+        vh: inRange(w.vh, 240, 16384, 0) || undefined,
+        anchor: w.anchor === 'center' ? 'center' : null,
+        placed: !!w.placed,
+      };
+    }
+  }
   return s;
 }
 

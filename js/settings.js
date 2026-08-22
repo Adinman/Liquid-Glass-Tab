@@ -1,6 +1,8 @@
 // The settings drawer. Every control writes straight to state and re-applies.
 import { $, $$, el, toast, dropCache, debounce, clamp } from './util.js';
-import { WALLPAPERS, ENGINES, WIDGET_META, DEFAULTS, HOLIDAYS } from './config.js';
+import { WALLPAPERS, ENGINES, WIDGET_META, DEFAULTS, HOLIDAYS,
+         WIDGET_SIZE, widgetSize,
+         PHOTOS, CLIPS, BG_PREFIX, bgThumb } from './config.js';
 import { countdownTarget } from './widgets/core.js';
 import { S, set, setWidget, resetAll, exportSettings, importSettings } from './state.js';
 import { applyTheme, applyVideoWallpaper, cssImageURL,
@@ -63,6 +65,26 @@ function slider(key, min, max, step = 1, after) {
   return el('span', { class: 'row' }, inp, out);
 }
 
+/** Per-widget size. Unlike slider() above this writes into S.widgets[id] and
+ *  applies to the live panel by event, because rebuilding every widget on each
+ *  step of a drag would restart the visualiser and re-run every widget fetch. */
+function widgetSizeSlider(id) {
+  const out = el('span', { class: 'faint tabular', style: { width: '38px', textAlign: 'right', fontSize: '11px' } });
+  const inp = el('input', {
+    type: 'range', min: WIDGET_SIZE.min, max: WIDGET_SIZE.max, step: WIDGET_SIZE.step,
+    value: widgetSize(S.widgets[id]), style: { width: '96px' },
+    title: 'Widget size',
+  });
+  const show = () => { out.textContent = inp.value + '%'; };
+  show();
+  inp.addEventListener('input', show);
+  inp.addEventListener('input', debounce(async () => {
+    window.dispatchEvent(new CustomEvent('lgt:widget-size', { detail: { id, size: +inp.value } }));
+    await setWidget(id, { size: +inp.value });
+  }, 40));
+  return el('span', { class: 'row' }, inp, out);
+}
+
 function select(key, options, after) {
   const s = el('select', {}, ...Object.entries(options).map(([v, label]) =>
     el('option', { value: v, selected: String(S[key]) === v }, label)));
@@ -88,6 +110,31 @@ function color(key) {
   return i;
 }
 
+/** Whether the still layer is what you are actually looking at.
+ *
+ *  The video layer renders on top of the still one, so while a clip is playing
+ *  the still underneath is invisible. Highlighting it anyway is what let a
+ *  photo and a clip both appear selected at once.
+ *
+ *  It stays *set*, though — it is not cleared when a clip is chosen. Turn the
+ *  clip off and the wallpaper you had comes back and lights up again, which
+ *  also means picking a clip can never quietly discard an uploaded image that
+ *  has no other way back into the UI. */
+const stillShowing = () => !S.wallpaperVideo;
+
+/** A packaged-background swatch. Draws the small thumbnail file rather than
+ *  the full-size background: the picker shows every one of them at once, and
+ *  pointing it at the real files would decode ~8 MB apiece to fill a grid of
+ *  64px squares. */
+function bgSwatch(entry, { clip = false, on, onPick }) {
+  return el('div', {
+    class: 'wp-sw wp-img' + (clip ? ' wp-clip' : '') + (on ? ' on' : ''),
+    style: { backgroundImage: `url("${bgThumb(entry.id)}")` },
+    title: on ? `${entry.name} — click to turn off` : `${entry.name} — ${entry.credit}`,
+    onclick: onPick,
+  });
+}
+
 const group = (title, ...rows) => el('div', { class: 'set-group' }, el('h3', { text: title }), ...rows);
 
 /* ---------- tab bodies ---------- */
@@ -96,10 +143,30 @@ const PANELS = {
     group('Wallpaper',
       el('div', { class: 'wp-swatches' }, ...WALLPAPERS.map(w =>
         el('div', {
-          class: 'wp-sw' + (!S.wallpaperCustom && S.wallpaper === w.id ? ' on' : ''),
-          style: { background: w.css }, title: w.name,
-          onclick: async () => { await set({ wallpaper: w.id, wallpaperCustom: '' }); applyTheme(); draw(); },
+          class: 'wp-sw' + (stillShowing() && !S.wallpaperCustom && S.wallpaper === w.id ? ' on' : ''),
+          // The longhand, not `background:`. The shorthand resets every
+          // background longhand it does not mention — including the
+          // background-origin and background-repeat that stop the swatch
+          // tiling its own edge into the 2px transparent border.
+          style: { backgroundImage: w.css }, title: w.name,
+          onclick: () => pickStill({ wallpaper: w.id, wallpaperCustom: '' }),
         }))),
+      el('div', { class: 'set-sub', text: 'Photos' }),
+      el('div', { class: 'wp-swatches' }, ...PHOTOS.map(ph => {
+        const on = stillShowing() && S.wallpaperCustom === BG_PREFIX + ph.id;
+        return bgSwatch(ph, {
+          on,
+          // Clicking the active one turns it off, back to the gradient
+          // underneath. Without this a photo could only ever be swapped for
+          // another photo, never removed — the Clear button next to it is for
+          // an uploaded file and deletes that file's blob, which is the wrong
+          // thing entirely for a built-in.
+          onPick: () => pickStill({ wallpaperCustom: on ? '' : BG_PREFIX + ph.id }),
+        });
+      })),
+      row('Dim', slider('stillDim', 0, 80, 5),
+        'Darkens a photo wallpaper so widgets stay readable over a bright one. '
+        + 'Gradients are unaffected.'),
       row('Custom image', el('div', { class: 'row' },
         el('button', { class: 'btn', text: 'Upload…', onclick: pickImage }),
         el('button', { class: 'btn', text: 'Clear', onclick: clearImage })),
@@ -119,8 +186,24 @@ const PANELS = {
       })()),
     ),
     group('Live wallpaper (video)',
+      el('div', { class: 'wp-swatches' }, ...CLIPS.map(cl => {
+        const on = S.wallpaperVideo === BG_PREFIX + cl.id;
+        return bgSwatch(cl, {
+          clip: true,
+          on,
+          // Turning a built-in clip off is not the same as the Remove button
+          // below, which deletes an uploaded file from IndexedDB. This only
+          // unsets the choice; there is no blob to delete.
+          onPick: async () => {
+            await set(on ? { wallpaperVideo: '', wallpaperVideoName: '' }
+                         : { wallpaperVideo: BG_PREFIX + cl.id, wallpaperVideoName: cl.name });
+            applyTheme(); draw();
+          },
+        });
+      })),
       row('Current', el('span', { class: 'faint', style: { fontSize: '12px' },
         text: S.wallpaperVideo === 'local' ? (S.wallpaperVideoName || 'local file')
+          : S.wallpaperVideo?.startsWith(BG_PREFIX) ? (S.wallpaperVideoName || 'built in')
           : S.wallpaperVideo ? 'from URL' : 'none' })),
       row('Video file', el('div', { class: 'row' },
         el('button', { class: 'btn', text: 'Choose MP4…', onclick: pickVideo }),
@@ -238,22 +321,35 @@ const PANELS = {
   ],
 
   widgets: () => [
-    group('Enabled widgets', ...Object.entries(WIDGET_META).map(([id, label]) => {
+    group('Widgets', ...Object.entries(WIDGET_META).map(([id, label]) => {
       const sw = el('div', { class: 'switch' + (S.widgets[id]?.on ? ' on' : '') }, el('i'));
       sw.addEventListener('click', async () => {
         sw.classList.toggle('on');
         await setWidget(id, { on: sw.classList.contains('on') });
         rebuild();
       });
-      return row(label, sw);
+      // On/off and size on one row: 17 widgets in two lists would mean
+      // scrolling between a widget's own two controls.
+      return row(label, el('span', { class: 'row' }, widgetSizeSlider(id), sw));
     })),
     group('Layout',
+      row('Shrink to fit', (() => {
+        const sw = el('div', { class: 'switch' + (S.widgetScaleMode === 'window' ? ' on' : ''), role: 'switch' }, el('i'));
+        sw.addEventListener('click', async () => {
+          sw.classList.toggle('on');
+          await set({ widgetScaleMode: sw.classList.contains('on') ? 'window' : 'fixed' });
+          // Sizes are re-applied from the live panels rather than by rebuilding,
+          // for the same reason the size slider does it that way.
+          window.dispatchEvent(new Event('lgt:rescale'));
+        });
+        return sw;
+      })(), 'Scales every widget down together when the window is too small for them. Never scales up.'),
       row('Edit mode', (() => {
         const b = el('button', { class: 'btn', text: 'Toggle drag mode',
           onclick: () => window.dispatchEvent(new Event('lgt:edit')) });
         return b;
       })(), 'Drag panels anywhere. Press E to toggle.'),
-      row('Reset positions', el('button', {
+      row('Reset positions and sizes', el('button', {
         class: 'btn danger', text: 'Reset layout',
         onclick: async () => {
           // anchor and placed have to go back too. Resetting only x/y left a
@@ -261,7 +357,16 @@ const PANELS = {
           // the clock came back half its width off-centre, and `placed` kept
           // it exempt from the dock reserve it should have again.
           for (const [id, w] of Object.entries(DEFAULTS.widgets)) {
-            await setWidget(id, { x: w.x, y: w.y, anchor: w.anchor ?? null, placed: false });
+            await setWidget(id, {
+              x: w.x, y: w.y, anchor: w.anchor ?? null, placed: false,
+              size: WIDGET_SIZE.default,
+              // The viewport a drag was recorded in has to go as well. Left
+              // behind, a widget restored to its default position still
+              // resolves that position against the window it was last dragged
+              // in — so "Reset layout" put every widget you had ever moved
+              // somewhere that was neither where you left it nor the default.
+              vw: undefined, vh: undefined,
+            });
           }
           rebuild(); toast('Layout reset');
         },
@@ -710,18 +815,46 @@ function draw() {
 function initSettingsDrag(panel) {
   const header = panel.querySelector('header');
 
-  const place = pos => {
+  // A stored size of zero would pin the panel to 0x0 at the corner, so treat
+  // anything degenerate as "never dragged".
+  const valid = p => p && Number.isFinite(p.y) && p.h > 120
+    && (Number.isFinite(p.x) || Number.isFinite(p.fx));
+
+  /** The horizontal position is stored as a RATIO of the free space, not as a
+   *  pixel column: 0 is flush left, 1 is flush right.
+   *
+   *  It used to be an absolute x, which is fine until the window changes width.
+   *  The panel defaults to `right: 14px`, so a user who nudged it to the right
+   *  edge at 1280px got x≈870 written down — and at 1920px, which is what F11
+   *  fullscreen gives you, that column is nowhere near the right edge and the
+   *  panel appears stranded towards the middle-left. A ratio keeps a
+   *  right-docked panel docked right at every width. */
+  const ratioOf = p => {
+    if (Number.isFinite(p.fx)) return clamp(p.fx, 0, 1);
+    const span = Math.max(1, innerWidth - (panel.offsetWidth || 396));
+    return clamp(p.x / span, 0, 1);            // migrate a legacy absolute x
+  };
+
+  const applyPos = () => {
+    const p = S.settingsPos;
+    if (!valid(p)) return;
+    const w = panel.offsetWidth || 396;
+    const span = Math.max(1, innerWidth - w);
     panel.classList.add('dragged');
     panel.style.right = 'auto';
     panel.style.bottom = 'auto';
-    panel.style.height = pos.h + 'px';
-    panel.style.left = pos.x + 'px';
-    panel.style.top = pos.y + 'px';
+    panel.style.height = Math.min(p.h, Math.max(140, innerHeight - 28)) + 'px';
+    panel.style.left = Math.round(ratioOf(p) * span) + 'px';
+    panel.style.top = clamp(p.y, 8, Math.max(8, innerHeight - 60)) + 'px';
   };
-  // A stored size of zero would pin the panel to 0x0 at the corner, so treat
-  // anything degenerate as "never dragged".
-  const valid = p => p && Number.isFinite(p.x) && Number.isFinite(p.y) && p.h > 120;
-  if (valid(S.settingsPos)) place(S.settingsPos);
+
+  /** Give the panel back to the stylesheet, which docks it top-right. */
+  const unpin = () => {
+    panel.classList.remove('dragged');
+    for (const k of ['right', 'bottom', 'height', 'left', 'top']) panel.style[k] = '';
+  };
+
+  if (valid(S.settingsPos)) applyPos();
   else if (S.settingsPos) set({ settingsPos: null });
 
   header.addEventListener('pointerdown', e => {
@@ -730,12 +863,27 @@ function initSettingsDrag(panel) {
     if (r.height < 120) return;                          // panel isn't actually open
     e.preventDefault();
     const offX = e.clientX - r.left, offY = e.clientY - r.top;
-    place({ x: r.left, y: r.top, h: r.height });
+    const wasPinned = valid(S.settingsPos);
+    let moved = false;
+
+    // Switch to absolute positioning so the panel can be dragged at all. This
+    // is NOT persisted until the pointer actually moves — it used to be written
+    // on every pointerup, so one stray click on the header silently converted
+    // the panel from "docked to the right edge" to "pinned to this pixel
+    // column" for good, and nothing about clicking a header suggests that.
+    panel.classList.add('dragged');
+    panel.style.right = 'auto';
+    panel.style.bottom = 'auto';
+    panel.style.height = r.height + 'px';
+    panel.style.left = r.left + 'px';
+    panel.style.top = r.top + 'px';
+
     // Must not be able to abort the handler before the move/up listeners are
     // attached, or a failed capture leaves the drag permanently dead.
     try { header.setPointerCapture(e.pointerId); } catch {}
 
     const move = ev => {
+      if (Math.abs(ev.clientX - e.clientX) > 3 || Math.abs(ev.clientY - e.clientY) > 3) moved = true;
       const x = clamp(ev.clientX - offX, 8 - r.width * 0.6, innerWidth - r.width * 0.4);
       const y = clamp(ev.clientY - offY, 8, innerHeight - 60);
       panel.style.left = x + 'px';
@@ -744,8 +892,16 @@ function initSettingsDrag(panel) {
     const up = async () => {
       header.removeEventListener('pointermove', move);
       header.removeEventListener('pointerup', up);
+      if (!moved) {
+        // A click, not a drag. Leave the stored position exactly as it was —
+        // and if there wasn't one, hand the panel back to the stylesheet.
+        if (wasPinned) applyPos(); else unpin();
+        return;
+      }
+      const span = Math.max(1, innerWidth - panel.offsetWidth);
       await set({ settingsPos: {
-        x: parseFloat(panel.style.left), y: parseFloat(panel.style.top),
+        fx: clamp(parseFloat(panel.style.left) / span, 0, 1),
+        y: parseFloat(panel.style.top),
         h: parseFloat(panel.style.height),
       } });
     };
@@ -753,15 +909,9 @@ function initSettingsDrag(panel) {
     header.addEventListener('pointerup', up);
   });
 
-  // A resized window can strand it off-screen.
-  window.addEventListener('resize', () => {
-    if (!S.settingsPos) return;
-    const r = panel.getBoundingClientRect();
-    const x = clamp(r.left, 8 - r.width * 0.6, Math.max(8, innerWidth - r.width * 0.4));
-    const y = clamp(r.top, 8, Math.max(8, innerHeight - 60));
-    panel.style.left = x + 'px';
-    panel.style.top = y + 'px';
-  });
+  // A resized window — including entering or leaving fullscreen — re-resolves
+  // the ratio rather than just dragging the old pixel column back on screen.
+  window.addEventListener('resize', () => { if (S.settingsPos) applyPos(); });
 }
 
 export function initSettings(onRebuild) {
@@ -776,6 +926,23 @@ export function initSettings(onRebuild) {
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape' && !panel.hidden) panel.hidden = true;
   });
+}
+
+/** Apply a still wallpaper — gradient or packaged photo — and turn off any
+ *  running clip.
+ *
+ *  The video layer sits on top of the still one, so picking a wallpaper while
+ *  a clip is playing would change nothing you can see, which reads as a dead
+ *  button rather than as "the video is in front". Nothing is destroyed: a
+ *  local clip stays in IndexedDB and a packaged one is a file, so re-picking
+ *  either is one click. */
+async function pickStill(patch) {
+  const hadVideo = !!S.wallpaperVideo;
+  if (hadVideo) { patch = { ...patch, wallpaperVideo: '', wallpaperVideoName: '' }; }
+  await set(patch);
+  applyTheme();
+  draw();
+  if (hadVideo) toast('Live wallpaper turned off');
 }
 
 async function pickVideo() {

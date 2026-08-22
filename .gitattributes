@@ -4,3 +4,6 @@
 # Binary — never touch these.
 *.png binary
 *.zip binary
+*.webp binary
+*.avif binary
+*.mp4 binary

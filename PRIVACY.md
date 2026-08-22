@@ -1,6 +1,6 @@
 # Privacy Policy — CGT: Customizable Glass Tab
 
-_Last updated: 15 August 2026_
+_Last updated: 21 August 2026_
 
 CGT: Customizable Glass Tab replaces Chrome's new tab page. This policy explains exactly
 what it does with your data. The short version: **everything stays on your
@@ -25,6 +25,7 @@ All of it locally, in your own browser:
 | Notes, to-do list, focus-timer count | `chrome.storage.local` | No |
 | Cached weather, news, crypto, lyrics | `chrome.storage.local` | No |
 | Uploaded wallpaper image or video | IndexedDB (as a Blob) | No |
+| Built-in backgrounds | Packaged in the extension | No — they are files inside it, never fetched |
 | Spotify access + refresh token | `chrome.storage.local` | Only back to Spotify |
 
 Uninstalling the extension deletes all of it. **⚙ → Data → Factory reset**

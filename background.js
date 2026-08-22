@@ -47,7 +47,44 @@ chrome.alarms.onAlarm.addListener(async alarm => {
   // field each.
   const s = await settings();
   await Promise.allSettled([warmWeather(s), warmNews(s), refreshSpotify(s)]);
+  await pruneCache();
 });
+
+/* ---------------- bounded response cache ----------------
+   `cachedFetch` writes one `cache:` entry per key, and its TTL only decides
+   when a value is considered stale — never when it is removed. A key that is
+   never requested again is never deleted.
+
+   That is fine for weather and news, which reuse a handful of fixed keys, and
+   not fine for lyrics, which key per track: `lrc:<artist>|<title>|<duration>`.
+   Measured on a real LRCLIB response, one entry carries ~1,100 characters of
+   plainLyrics plus ~2,200 of syncedLyrics — about 3.5 KB. Twenty new tracks a
+   day is roughly 25 MB a year, and it only ever grows.
+
+   Pruned here rather than in the page. This worker already wakes on the alarm
+   to do storage work, while enumerating every key is far too expensive to put
+   anywhere near the new-tab path. Oldest first, so the entries the warm calls
+   above just wrote are the last to go. */
+const CACHE_MAX = 400;            // ~1.4 MB at the measured entry size
+
+async function pruneCache() {
+  try {
+    // Cheap check first where it exists: getKeys avoids deserialising every
+    // value just to find out there is nothing to do, which is the common case.
+    if (typeof chrome.storage.local.getKeys === 'function') {
+      const keys = await chrome.storage.local.getKeys();
+      if (keys.filter(k => k.startsWith('cache:')).length <= CACHE_MAX) return;
+    }
+    const all = await chrome.storage.local.get(null);
+    const entries = Object.keys(all)
+      .filter(k => k.startsWith('cache:'))
+      .map(k => [k, Number(all[k]?.at) || 0]);
+    if (entries.length <= CACHE_MAX) return;
+    entries.sort((a, b) => a[1] - b[1]);
+    const kill = entries.slice(0, entries.length - CACHE_MAX).map(e => e[0]);
+    if (kill.length) await chrome.storage.local.remove(kill);
+  } catch { /* pruning is housekeeping; never let it break the refresh */ }
+}
 
 async function settings() {
   const { settings } = await chrome.storage.local.get('settings');

@@ -122,6 +122,37 @@ def check_reserved_names(files):
             fail(f"root-level file starts with '_': {rel} — Chrome will refuse to load")
 
 
+# Chrome allows exactly these two reserved names; everything else starting with
+# an underscore is rejected outright.
+ALLOWED_UNDERSCORE = {"_locales", "_metadata"}
+
+
+def check_unpacked_tree():
+    """Nothing anywhere in the folder may start with '_'.
+
+    check_reserved_names above only sees the files being SHIPPED, only at the
+    root, and only files. That is not the whole story, because "Load unpacked"
+    — which is how this is developed and how README section 1 tells people to
+    install it — makes Chrome scan the entire directory, including everything
+    the zip excludes.
+
+    So a stray `__pycache__/`, which `collect()` filters out and `.gitignore`
+    hides, breaks the extension completely while every other check here stays
+    green: the zip is perfect, git is clean, and Chrome refuses to load with
+    "Filenames starting with \"_\" are reserved for use by the system."
+    That happened, hence this check. Directories count, and so does depth.
+    """
+    for base, dirs, files in os.walk(ROOT):
+        dirs[:] = [d for d in dirs if d != ".git"]
+        for name in list(dirs) + files:
+            if name.startswith("_") and name not in ALLOWED_UNDERSCORE:
+                rel = os.path.relpath(os.path.join(base, name), ROOT)
+                kind = "directory" if name in dirs else "file"
+                fail(f"{kind} name starts with '_': {rel} — Chrome refuses to "
+                     f"load the unpacked extension, even though this is not in "
+                     f"the zip. Delete it.")
+
+
 def check_no_dev_references(files):
     """A published build must not reference files that were excluded."""
     shipped = set(files)
@@ -138,18 +169,50 @@ def check_no_dev_references(files):
                 warn(f"{rel} mentions {dev}, which is not shipped")
 
 
+def registry_ids(block):
+    """The ids listed in one of config.js's background tables.
+
+    Read out of config.js rather than repeated here, because the failure this
+    guards against is exactly the two lists drifting apart: adding an entry to
+    the registry without generating its file ships a picker swatch that paints
+    nothing and a wallpaper that resolves to a 404.
+    """
+    src = os.path.join(ROOT, "js", "config.js")
+    with open(src, encoding="utf-8") as f:
+        text = f.read()
+    m = re.search(r"export const %s = \[(.*?)\];" % block, text, re.S)
+    if not m:
+        fail(f"could not find the {block} table in js/config.js")
+        return []
+    return re.findall(r"id:\s*'([A-Za-z0-9_-]+)'", m.group(1))
+
+
 def check_assets_present(files):
     shipped = set(files)
-    for needed in ("assets/refract-map.png", "assets/grain.png"):
-        if needed.replace("/", os.sep) not in shipped:
-            fail(f"missing generated asset: {needed} — run "
-                 f"`python assets/make_assets.py`")
+
+    def need(rel, how):
+        if rel.replace("/", os.sep) not in shipped:
+            fail(f"missing generated asset: {rel} — run `{how}`")
+
+    for rel in ("assets/refract-map.png", "assets/grain.png"):
+        need(rel, "python assets/make_assets.py")
+
+    # Packaged backgrounds: every registry id needs its full-size file and its
+    # picker thumbnail.
+    build = "python assets/make_backgrounds.py --images DIR --videos DIR"
+    for bid in registry_ids("PHOTOS"):
+        need(f"assets/bg/{bid}.avif", build)
+        need(f"assets/bg/thumbs/{bid}.webp", build)
+    for bid in registry_ids("CLIPS"):
+        need(f"assets/bg/{bid}.mp4", build)
+        need(f"assets/bg/thumbs/{bid}.webp", build)
 
 
 def main():
     files = collect()
     m = check_manifest()
     check_reserved_names(files)
+    check_unpacked_tree()
     check_assets_present(files)
     check_no_dev_references(files)
 

@@ -112,6 +112,17 @@
 }
 :root[data-edit="on"] .widget .drag-badge { display: grid; }
 
+/* Resize grip. Same treatment as the move badge, opposite corner. Both are
+   counter-zoomed in JS so they keep one physical size whatever the widget's
+   size setting is. */
+.widget .size-badge {
+  position: absolute; right: -10px; bottom: -10px; width: 22px; height: 22px;
+  border-radius: 50%; display: none; place-items: center; font-size: 11px;
+  background: var(--accent); color: #071019; box-shadow: 0 4px 12px rgba(0,0,0,.4);
+  cursor: nwse-resize; touch-action: none; user-select: none;
+}
+:root[data-edit="on"] .widget .size-badge { display: grid; }
+
 /* ---------- dock ---------- */
 #dock-zone {
   position: fixed; z-index: 30; left: 0; right: 0; bottom: 0;
@@ -137,7 +148,8 @@
   padding: 9px 12px;
   transition: transform .38s cubic-bezier(.2,.9,.25,1);
 }
-#dock-items { display: flex; align-items: flex-end; gap: var(--dock-gap, 6px); height: var(--dock-size); }
+#dock-items { display: flex; align-items: flex-end; gap: calc(var(--dock-gap, 6px) * var(--fit));
+  height: calc(var(--dock-size) * var(--fit)); }
 
 /* Hover effects are driven entirely from dock.js (see the animation loop
    there). CSS :hover can only ever style the one item under the cursor and
@@ -147,7 +159,7 @@
 
 .dock-item {
   position: relative;
-  width: var(--dock-size); height: var(--dock-size);
+  width: calc(var(--dock-size) * var(--fit)); height: calc(var(--dock-size) * var(--fit));
   flex: 0 0 auto;
   display: grid; place-items: center;
   border-radius: 30%;

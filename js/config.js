@@ -13,6 +13,50 @@ export const WALLPAPERS = [
   { id: 'paper',    name: 'Paper',     css: 'linear-gradient(150deg,#eef1f6 0%,#dfe4ee 50%,#e9ecf3 100%)' },
 ];
 
+/* ---------------- packaged backgrounds ----------------
+   Stills and clips that ship inside the extension, next to the gradients
+   above. Both reuse the fields a user's own wallpaper already uses —
+   `wallpaperCustom` for the still layer, `wallpaperVideo` for the video one —
+   under a `bg:` prefix, so every existing rule about which layer wins applies
+   to them unchanged.
+
+   Packaged rather than fetched, which is what keeps them cheap: no host
+   permission, no network request, nothing added to the store's data
+   disclosure, and Chrome shares one decode of a packaged file across every
+   open tab — where a blob: URL out of IndexedDB is minted per page.
+
+   Only the id is stored. It is looked up in these tables rather than pasted
+   into a path, so an imported settings file carrying `bg:../../something`
+   resolves to nothing instead of resolving to a file.
+
+   Regenerate the files with `python assets/make_backgrounds.py`. */
+export const BG_PREFIX = 'bg:';
+
+export const PHOTOS = [
+  { id: 'galaxy',   name: 'Galaxy',      credit: 'Alisson Silva / Pexels' },
+  { id: 'milkyway', name: 'Milky Way',   credit: 'Anjan Karki / Pexels' },
+  { id: 'lake',     name: 'Alpine Lake', credit: 'eberhard grossgasteiger / Pexels' },
+  { id: 'meadow',   name: 'Meadow',      credit: 'Poliakova / Pexels' },
+  { id: 'smoke',    name: 'Ember',       credit: 'Thales / Pexels' },
+];
+
+export const CLIPS = [
+  { id: 'dusklake', name: 'Still Water', credit: 'Pixabay' },
+  { id: 'blossom',  name: 'Blossom',     credit: 'Pixabay' },
+  { id: 'rain',     name: 'Rain',        credit: 'Pixabay' },
+];
+
+export const photoFile = id => `assets/bg/${id}.avif`;
+export const clipFile  = id => `assets/bg/${id}.mp4`;
+export const bgThumb   = id => `assets/bg/thumbs/${id}.webp`;
+
+/** `bg:<id>` -> its entry in `list`, or null for anything else. */
+export function bundled(list, value) {
+  if (typeof value !== 'string' || !value.startsWith(BG_PREFIX)) return null;
+  const id = value.slice(BG_PREFIX.length);
+  return list.find(b => b.id === id) || null;
+}
+
 export const ENGINES = {
   google:     { name: 'Google',     url: 'https://www.google.com/search?q=%s' },
   duckduckgo: { name: 'DuckDuckGo', url: 'https://duckduckgo.com/?q=%s' },
@@ -198,6 +242,7 @@ export const DEFAULTS = {
   wallpaperVideo: '',     // 'local' (IndexedDB) | http(s) URL | '' for none
   wallpaperVideoName: '', // shown in settings
   videoDim: 25,           // % black overlay, keeps widgets readable
+  stillDim: 0,            // same, for a photo wallpaper. 0 = show it as it is
   videoSpeed: 100,        // % playback rate
   videoPauseHidden: true, // pause decoding when the tab isn't visible
   fontScale: 100,
@@ -218,6 +263,7 @@ export const DEFAULTS = {
   dockMaxItems: 24,
 
   // behaviour
+  widgetScaleMode: 'window',   // 'window' shrinks widgets to fit a small window, 'fixed' never does
   editMode: false,
   searchEngine: 'google',
   suggestions: true,
@@ -289,6 +335,48 @@ export const DEFAULTS = {
     battery:    { on: false, x: 3.5,  y: 84 },
   },
 };
+
+/** Per-widget size, as a percentage of the widget's natural size.
+ *  Stored per widget as `size`; absent means 100.
+ *
+ *  Bounded at both ends on purpose. An imported settings file is untrusted
+ *  input and this number becomes a CSS zoom, so an unchecked one is either
+ *  NaN (the panel disappears) or large enough to bury the settings button
+ *  that would let you undo it. `state.js` clamps to these on load and import. */
+export const WIDGET_SIZE = { min: 50, max: 200, step: 5, default: 100 };
+
+/** Shrink-to-fit bounds for the layout pass in `app.js`.
+ *
+ *  Widgets are only ever scaled DOWN, never up. Scaling up was the first
+ *  attempt and it was wrong twice over: it keyed off window *width*, so a wide
+ *  short window made everything bigger in the one dimension that had no room,
+ *  and enlarging does not suit every widget anyway — a bigger clock is fine, a
+ *  bigger news list is just a news list with fewer stories visible.
+ *
+ *  `min` is a readability floor. Past it the layout pass stops shrinking and
+ *  starts pushing widgets apart instead. */
+export const WIDGET_SCALE = { min: 0.5, gap: 14 };
+
+/** The viewport the shipped default layout was arranged for.
+ *
+ *  A widget's x/y are percentages, but a percentage only means something
+ *  against a size. This is that size for any widget the user has never moved;
+ *  a widget they have dragged records the viewport it was dropped in as vw/vh.
+ *  Resolving against the size a position was authored at is what lets gaps be
+ *  preserved in pixels, which is what stops the layout stretching when the
+ *  window changes shape. */
+export const CANON = { w: 1920, h: 1080 };
+// Not 1440: the default visualiser sits at x=74% and is 440px wide, so it needs
+// a 1786px viewport before it fits at all. Resolving the shipped defaults
+// against a width they overflow put the right-hand column off the edge before
+// anything else had a chance to go wrong.
+
+/** The size of one widget's config entry, as a percentage, always in range. */
+export function widgetSize(cfg) {
+  const n = Number(cfg?.size);
+  if (!Number.isFinite(n)) return WIDGET_SIZE.default;
+  return Math.min(WIDGET_SIZE.max, Math.max(WIDGET_SIZE.min, n));
+}
 
 export const WIDGET_META = {
   clock:      'Clock & date',
