@@ -737,13 +737,19 @@ what matters, not the file: the 512² map was 1 MB decoded from an 11 KB string.
 decoded, so for that window — on every single new tab — the still layer is the
 only thing on screen. Since a photo stays *stored* underneath a clip (so
 turning the clip off restores it), painting it there made every new tab flash
-an unrelated picture before the video arrived. The picker thumbnail is already
-the clip's first frame, so it stands in: colour-matched, invisible hand-off,
-and about 3 KB that was in the package anyway. A local or remote video has no
+an unrelated picture before the video arrived.
+
+A packaged clip ships its own first frame as a poster,
+`<id>.poster.avif`, 1280 wide for about 30 KB. The picker
+thumbnail did this job first and was the wrong asset for it: 192x108 is right
+for a 64px swatch and a 10x upscale at 1920 wide, so a live wallpaper opened on
+a blurred smear that sharpened into video — which is what the flash still
+looked like after the *content* was already correct. At 1280 the stand-in is a
+1.5x upscale and the hand-off is invisible. A local or remote video has no
 shipped frame and falls back to the gradient, which is still a better stand-in
 than someone's photograph. If the video fails to load, the still layer is
-repainted with the real wallpaper — otherwise a dead clip leaves a 192x108
-thumbnail stretched across the screen.
+repainted with the real wallpaper — otherwise a dead clip leaves its poster
+stretched across the screen.
 
 **Turning the visualiser off releases the audio capture.** `audio.stop()` is
 otherwise only reached by a track ending or by picking *Simulated*, so

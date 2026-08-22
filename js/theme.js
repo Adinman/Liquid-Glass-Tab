@@ -4,7 +4,7 @@ import { $ } from './util.js';
 import { setIconMode } from './icons.js';
 import { getBlob, WALLPAPER_IMAGE_KEY, WALLPAPER_VIDEO_KEY } from './media.js';
 import { WALLPAPERS, PHOTOS, CLIPS, BG_PREFIX,
-         bundled, photoFile, clipFile, bgThumb } from './config.js';
+         bundled, photoFile, clipFile, bgThumb, clipPoster } from './config.js';
 import { S } from './state.js';
 
 /* ---------- refraction map ----------
@@ -63,7 +63,7 @@ function paintCachedWallpaper() {
     // A clip was playing. Its own first frame stands in until the video
     // decodes, exactly as paintStill does once settings arrive.
     const clip = bundled(CLIPS, BG_PREFIX + v.thumb);
-    if (clip) bg = `url("${bgThumb(clip.id)}")`;
+    if (clip) bg = `url("${clipPoster(clip.id)}")`;
   } else if (v.photo) {
     const photo = bundled(PHOTOS, BG_PREFIX + v.photo);
     if (photo) bg = `url("${photoFile(photo.id)}")`;
@@ -238,7 +238,7 @@ function paintStill(node, { ignoreVideo = false } = {}) {
   if (video) {
     releaseLocalImage();
     const clip = bundled(CLIPS, video);
-    node.style.backgroundImage = clip ? `url("${bgThumb(clip.id)}")` : presetCSS();
+    node.style.backgroundImage = clip ? `url("${clipPoster(clip.id)}")` : presetCSS();
   } else if (custom === 'local') {
     // Resolved asynchronously; whatever is on screen stays until the blob lands
     // rather than flashing the preset gradient in between.

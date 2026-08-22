@@ -49,6 +49,7 @@ THUMBS = os.path.join(OUT, "thumbs")
 W, H = 1920, 1080
 THUMB_W, THUMB_H = 192, 108          # 3x the 64px swatch, for hidpi
 STILL_Q, THUMB_Q = 65, 72       # AVIF for stills, WebP for thumbs
+POSTER_W, POSTER_Q = 1280, 52   # a clip's first frame, as a full-screen stand-in
 # AV1 rather than H.264. Measured on all three clips, re-encoded from the
 # originals and scored with SSIM against them: 15.21 MB of H.264 CRF 26 becomes
 # 4.70 MB of AV1 CRF 40, and the SSIM goes UP on every clip (0.9334->0.9351,
@@ -132,12 +133,22 @@ def build_clips(src_dir):
             for pkt in vout.encode():
                 out.mux(pkt)
 
-        # First frame as the picker thumbnail, so a clip looks like what it is.
+        # First frame twice: a picker thumbnail, and a full-size poster.
+        #
+        # The poster is what stands in for the clip until the video decodes, on
+        # every new tab. The 192x108 thumbnail was doing that job and is a 10x
+        # upscale at 1920 wide, so a live wallpaper opened on a blurred smear
+        # that then sharpened. At 1280 wide it is about 30 KB a clip and the
+        # hand-off to video is invisible.
         from PIL import Image
         with av.open(dst) as c:
             frame = next(c.decode(video=0)).to_image()
         crop_169(frame).resize((THUMB_W, THUMB_H), Image.LANCZOS).save(
             os.path.join(THUMBS, f"{bid}.webp"), "WEBP", quality=THUMB_Q, method=6)
+        pw = POSTER_W
+        ph = round(frame.height * POSTER_W / frame.width)
+        frame.resize((pw, ph), Image.LANCZOS).save(
+            os.path.join(OUT, f"{bid}.poster.avif"), "AVIF", quality=POSTER_Q)
 
         was = os.path.getsize(path) / 1024 / 1024
         now = os.path.getsize(dst) / 1024 / 1024

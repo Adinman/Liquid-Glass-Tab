@@ -50,6 +50,14 @@ export const photoFile = id => `assets/bg/${id}.avif`;
 export const clipFile  = id => `assets/bg/${id}.mp4`;
 export const bgThumb   = id => `assets/bg/thumbs/${id}.webp`;
 
+/** A clip's first frame at a size that can actually fill a screen.
+ *
+ *  The picker thumbnail is 192x108, which is right for a 64px swatch and
+ *  hopeless as a full-screen stand-in: blown up to 1920 wide it is a 10x
+ *  upscale, so every new tab under a live wallpaper showed a blurred smear
+ *  resolving into sharp video. 1280 wide costs about 30 KB an clip in AVIF. */
+export const clipPoster = id => `assets/bg/${id}.poster.avif`;
+
 /** `bg:<id>` -> its entry in `list`, or null for anything else. */
 export function bundled(list, value) {
   if (typeof value !== 'string' || !value.startsWith(BG_PREFIX)) return null;

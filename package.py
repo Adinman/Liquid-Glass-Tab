@@ -206,6 +206,8 @@ def check_assets_present(files):
     for bid in registry_ids("CLIPS"):
         need(f"assets/bg/{bid}.mp4", build)
         need(f"assets/bg/thumbs/{bid}.webp", build)
+        # Without the poster a live wallpaper opens on a blurred thumbnail.
+        need(f"assets/bg/{bid}.poster.avif", build)
 
 
 def main():
