@@ -210,12 +210,43 @@ def check_assets_present(files):
         need(f"assets/bg/{bid}.poster.avif", build)
 
 
+def check_fx_registry():
+    """FX_SCENES/FX_GAMES in config.js must match the registry in js/fx/index.js.
+
+    The two are separate on purpose — the settings picker lists every scene by
+    name and must not import any of them, or the lazy load that keeps this code
+    off a new tab with no scene enabled would be defeated. The cost of that
+    split is exactly this drift: a scene named in config with no entry in the
+    registry is a picker card that silently does nothing when clicked, which
+    looks like a broken feature rather than a missing line.
+    """
+    src = os.path.join(ROOT, "js", "fx", "index.js")
+    if not os.path.exists(src):
+        fail("js/fx/index.js is missing")
+        return
+    with open(src, encoding="utf-8") as f:
+        text = f.read()
+
+    for block, table in (("SCENES", "FX_SCENES"), ("GAMES", "FX_GAMES")):
+        m = re.search(r"export const %s = \{(.*?)\};" % block, text, re.S)
+        if not m:
+            fail(f"could not find the {block} table in js/fx/index.js")
+            continue
+        registered = set(re.findall(r"^\s*([A-Za-z0-9_]+)\s*,", m.group(1), re.M))
+        named = set(registry_ids(table))
+        for missing in sorted(named - registered):
+            fail(f"{table} lists '{missing}' but js/fx/index.js {block} does not")
+        for extra in sorted(registered - named):
+            fail(f"js/fx/index.js {block} exports '{extra}' but {table} does not name it")
+
+
 def main():
     files = collect()
     m = check_manifest()
     check_reserved_names(files)
     check_unpacked_tree()
     check_assets_present(files)
+    check_fx_registry()
     check_no_dev_references(files)
 
     for w in warnings:

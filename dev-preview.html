@@ -25,6 +25,10 @@
       <span class="blob b1"></span><span class="blob b2"></span>
       <span class="blob b3"></span><span class="blob b4"></span>
     </div>
+    <!-- Interactive backgrounds. Above the blobs so it is not blurred by them,
+         below the grain and vignette so those still sit over it. Driven by
+         js/fx.js; stays hidden and untouched when no scene is on. -->
+    <canvas id="wp-fx" hidden></canvas>
     <div id="wp-grain"></div>
     <div id="wp-vignette"></div>
   </div>

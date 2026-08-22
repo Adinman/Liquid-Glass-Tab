@@ -8,6 +8,8 @@ import { initPalette } from './palette.js';
 import { initSpaces, renderSpaces } from './spaces.js';
 import { initSettings } from './settings.js';
 import { REGISTRY } from './widgets/index.js';
+import { initFX, refreshScene } from './fx.js';
+import { initPro, isPro, onProChange } from './pro.js';
 
 const stage = () => $('#stage');
 const teardown = new Map();   // widget id -> cleanup fn
@@ -629,6 +631,7 @@ function initEvents() {
       applyTheme();
       applyDockSettings();
       renderSpaces();
+      refreshScene(isPro());
       if (S.activeSpace !== before) renderDock();
     });
   });
@@ -641,6 +644,17 @@ function initEvents() {
   initEvents();
   initKeys();
   initPalette();
+  // The licence is one storage read and decides whether the interactive
+  // background is allowed to start, so it happens before the settings drawer is
+  // built and reads it.
+  await initPro();
+  initFX();
+  // Not awaited: it dynamically imports the scene registry, and a new tab has
+  // no business waiting on that to paint.
+  refreshScene(isPro());
+  // Activating or deactivating in the drawer takes effect on this tab straight
+  // away, and on every other open one via the storage listener above.
+  onProChange(() => refreshScene(isPro()));
   initSettings(rebuildWidgets);
   rebuildWidgets();
   await initSpaces();
@@ -655,7 +669,7 @@ function initEvents() {
   for (const delay of [400, 1500, 4000]) setTimeout(keepInView, delay);
 
   onChange(keys => {
-    if (keys.includes('*')) rebuildWidgets();
+    if (keys.includes('*')) { rebuildWidgets(); refreshScene(isPro()); }
   });
 
   // First run: open settings so the user can point weather at their city.

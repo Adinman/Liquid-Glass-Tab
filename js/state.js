@@ -239,6 +239,18 @@ function sanitize(s) {
   if (s.widgetScaleMode !== 'window' && s.widgetScaleMode !== 'fixed') {
     s.widgetScaleMode = DEFAULTS.widgetScaleMode;
   }
+
+  // The interactive background id is looked up in a plain object literal, and
+  // every one of those inherits Object.prototype — so 'constructor',
+  // '__proto__' and 'toString' are all truthy lookups that are not scenes.
+  // js/fx.js guards with Object.hasOwn as well; this keeps the junk out of
+  // storage in the first place. Unknown-but-plausible ids are left alone: a
+  // scene removed in a future version should resolve to nothing, not be
+  // silently rewritten to something else.
+  if (typeof s.fxScene !== 'string' || !/^[a-z][a-z0-9]{0,23}$/.test(s.fxScene)) {
+    s.fxScene = '';
+  }
+  s.pongBest = inRange(s.pongBest, 0, 1e6, 0);
   // The settings panel position reaches inline left/top/height. A ratio outside
   // 0..1, or a negative height, would park the panel off-screen with no way to
   // drag it back, so a bad one is dropped rather than clamped into something

@@ -431,6 +431,85 @@ sound. The animated colour blobs turn themselves off while a video is set so
 they don't veil it. If the file can't be decoded, it hides itself and your
 gradient shows through instead.
 
+### Interactive backgrounds (Pro)
+
+**⚙ → Look → Interactive background.** Three things that react to the mouse,
+drawn on a canvas that sits in the wallpaper stack — above the colour blobs,
+below the grain and vignette — so they pick up the blur and refraction of any
+glass panel that overlaps them.
+
+| | What it does |
+|---|---|
+| **Particles** | A field that drifts, gathers toward the cursor, and scatters when you click |
+| **Light switch** | A switch on the wall at centre-bottom. Clicking it flips the page between dark and light |
+| **Pong** | Endless rally against the computer, launched from the same picker |
+
+Particles and the light switch are backgrounds: pick one and it stays. Pong is a
+game — it takes the screen, fades the widgets and dock down to 7% so you are not
+playing through a news feed, and **Esc** leaves it and puts your background back.
+
+Pong scores a **rally count**, not a scoreline, and keeps an all-time best. That
+is on purpose: first-to-seven has a best score of seven and nothing to chase
+after the first evening, whereas a rally count is one number that can always go
+up. The opponent gets faster and more accurate the longer you last, and your own
+paddle has a speed limit — without one the mouse teleports it and the game
+cannot be lost.
+
+**What it costs.** Measured per frame, drawing at 2× device pixel ratio:
+
+| Scene | 720p | 1080p | 1440p |
+|---|---|---|---|
+| Particles | 0.15 ms | 0.24 ms | 0.18 ms |
+| Light switch | 0.02 ms | 0.01 ms | 0.01 ms |
+| Pong | 0.02 ms | 0.03 ms | 0.02 ms |
+
+The frame budget at 60 Hz is 16.7 ms, so the worst case is about 1.5% of it.
+1440p is not worse than 1080p because the particle count is capped at 110 and
+both resolutions hit the cap — the linking pass is O(n²) in particle count, not
+in pixels. The loop is cancelled outright — not merely early-returned — when the
+tab is hidden, when no scene is set, and for the ambient scenes under
+`prefers-reduced-motion`. A reduced-motion scene still gets one static frame, so
+the light switch is visible and usable rather than absent.
+
+The scene code is imported the first time a scene is switched on, so a tab
+belonging to somebody who never enables one never loads any of it.
+
+### Pro and licensing
+
+The interactive backgrounds are the paid feature. Payment goes through
+**Gumroad**, which issues a licence key per sale; pasting that key into
+**⚙ → Look → Licence key** checks it against Gumroad's public
+`/v2/licenses/verify` endpoint and unlocks the feature on that device.
+
+That endpoint needs a product id and nothing else — no access token — which is
+the only reason this can live in an extension at all. An extension ships as
+readable source, so **anything secret placed in it is published**; there is no
+API key here and there must never be one.
+
+To set it up in a fork or a rebuild:
+
+1. Create the product on Gumroad and enable **generate a licence key per sale**.
+2. Find its product id — it is in the product page's own markup, and is public.
+3. Put it in `GUMROAD.productId` in `js/config.js`, and point `buyUrl` at the
+   product page.
+
+Leaving `productId` empty is a supported state. The panel then says licensing is
+not set up rather than pretending to check, and every Pro feature stays locked.
+
+**This is a lock on an honest door.** Every check runs in code the user owns, on
+a machine they control, and anyone willing to open devtools can flip the flag.
+That is true of every client-side licence and is not worth pretending otherwise
+— the goal is that buying is easier than bypassing. So there is no obfuscation,
+no fingerprinting, and nothing is sent home except the key the user chose to
+type. Two consequences worth keeping:
+
+- The key lives under its own `chrome.storage.local` key, **not** in settings,
+  and is excluded from exports. A settings file people email around must not
+  carry somebody's purchase.
+- **A network failure never revokes anything.** Aeroplanes, captive portals and
+  Gumroad outages are all likelier than a refund. Only an explicit
+  `success: false` turns Pro off; re-checks are weekly, never per tab.
+
 ### Icon quality
 
 Chrome's favicon store usually only has **16×16** per site, which is a 3× upscale

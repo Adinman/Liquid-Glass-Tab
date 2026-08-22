@@ -384,6 +384,45 @@ select.dp-field option { background: #1a1d28; color: #fff; }
 .btn.danger { color: #ff8a94; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .wp-swatches { display: grid; grid-template-columns: repeat(5, 1fr); gap: 7px; }
+
+/* Interactive-background picker.
+   Cards rather than the 64px swatches above: a scene has no thumbnail worth
+   showing at that size, and what distinguishes them is what they do, so the
+   description has to be readable rather than a tooltip. */
+.fx-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.fx-card {
+  position: relative;
+  display: flex; flex-direction: column; gap: 3px;
+  padding: 10px 11px 11px; text-align: left;
+  border-radius: 13px;
+  border: 1px solid hsl(0 0% 100% / .12);
+  background: hsl(0 0% 100% / .06);
+  color: inherit; font: inherit; cursor: pointer;
+  transition: background .16s ease, border-color .16s ease;
+}
+.fx-card:hover { background: hsl(0 0% 100% / .12); border-color: hsl(0 0% 100% / .22); }
+.fx-card.on { border-color: var(--accent); background: hsl(0 0% 100% / .14); }
+/* Locked cards stay clickable on purpose — the click is what explains why they
+   are locked. Dimming them and leaving them live is the honest version of a
+   paywall; disabling them just looks broken. */
+.fx-card.locked { opacity: .62; }
+.fx-name { font-size: 13px; font-weight: 500; }
+.fx-blurb { font-size: 11px; color: var(--text-faint); line-height: 1.4; }
+.fx-lock, .fx-on {
+  position: absolute; top: 8px; right: 9px;
+  font-size: 9px; letter-spacing: .1em; font-weight: 600;
+  padding: 2px 5px; border-radius: 5px;
+}
+.fx-lock { background: hsl(0 0% 100% / .16); color: var(--text-dim); }
+.fx-on { background: var(--accent); color: #06121c; }
+
+/* Group-level hints. .hint was only ever styled inside .set-row, so the ones
+   written straight into a group rendered at body size. */
+.set-group > .hint {
+  font-size: 11px; color: var(--text-faint);
+  line-height: 1.5; margin: 8px 0 2px;
+}
+
 /* The 2px border is transparent until selected, and a background image is
    positioned against the padding box but painted across the border box. With
    the default `background-repeat: repeat` that 2px ring got filled by tiling
