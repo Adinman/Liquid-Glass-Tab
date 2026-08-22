@@ -245,8 +245,11 @@ function sanitize(s) {
   // that looks deliberate.
   const sp = s.settingsPos;
   if (sp && typeof sp === 'object' && !Array.isArray(sp)) {
+    // No height requirement: the panel takes its height from the stylesheet
+    // now, and entries written since then do not carry one at all. Demanding
+    // it here would quietly wipe every position on load.
     const okX = Number.isFinite(sp.fx) ? sp.fx >= 0 && sp.fx <= 1 : Number.isFinite(sp.x);
-    if (!okX || !Number.isFinite(sp.y) || !(sp.h > 120)) s.settingsPos = null;
+    if (!okX || !Number.isFinite(sp.y)) s.settingsPos = null;
   } else if (sp) {
     s.settingsPos = null;
   }

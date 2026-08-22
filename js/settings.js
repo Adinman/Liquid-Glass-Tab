@@ -800,9 +800,9 @@ function draw() {
 function initSettingsDrag(panel) {
   const header = panel.querySelector('header');
 
-  // A stored size of zero would pin the panel to 0x0 at the corner, so treat
-  // anything degenerate as "never dragged".
-  const valid = p => p && Number.isFinite(p.y) && p.h > 120
+  // Only a position, never a size. `h` is still read out of older entries by
+  // sanitize but nothing applies it any more — see applyPos.
+  const valid = p => p && Number.isFinite(p.y)
     && (Number.isFinite(p.x) || Number.isFinite(p.fx));
 
   /** The horizontal position is stored as a RATIO of the free space, not as a
@@ -827,8 +827,14 @@ function initSettingsDrag(panel) {
     const span = Math.max(1, innerWidth - w);
     panel.classList.add('dragged');
     panel.style.right = 'auto';
-    panel.style.bottom = 'auto';
-    panel.style.height = Math.min(p.h, Math.max(140, innerHeight - 28)) + 'px';
+    // Height and bottom are deliberately left to the stylesheet, which pins
+    // both edges (top:14 / bottom:14) so the panel spans the screen. This used
+    // to set bottom:auto and an explicit height taken from the drag, and there
+    // is no resize handle — so that height was only ever "whatever it happened
+    // to be when you last moved it", frozen for good. On a taller screen, and
+    // most obviously in fullscreen, the panel then stopped short of the bottom.
+    panel.style.bottom = '';
+    panel.style.height = '';
     panel.style.left = Math.round(ratioOf(p) * span) + 'px';
     panel.style.top = clamp(p.y, 8, Math.max(8, innerHeight - 60)) + 'px';
   };
@@ -877,6 +883,10 @@ function initSettingsDrag(panel) {
     const up = async () => {
       header.removeEventListener('pointermove', move);
       header.removeEventListener('pointerup', up);
+      // The height was frozen on pointerdown so the panel would not resize
+      // under the cursor mid-drag. Hand it back to the stylesheet now.
+      panel.style.height = '';
+      panel.style.bottom = '';
       if (!moved) {
         // A click, not a drag. Leave the stored position exactly as it was —
         // and if there wasn't one, hand the panel back to the stylesheet.
@@ -887,8 +897,8 @@ function initSettingsDrag(panel) {
       await set({ settingsPos: {
         fx: clamp(parseFloat(panel.style.left) / span, 0, 1),
         y: parseFloat(panel.style.top),
-        h: parseFloat(panel.style.height),
       } });
+      applyPos();          // re-assert the stylesheet's full-height geometry
     };
     header.addEventListener('pointermove', move);
     header.addEventListener('pointerup', up);

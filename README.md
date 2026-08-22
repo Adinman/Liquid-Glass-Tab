@@ -1020,6 +1020,21 @@ stored-size space and divides the pointer delta back through the factor.
 but a widget that grew since it was placed can still land on its neighbour, so
 anything still colliding after anchoring is pushed clear.
 
+**The settings panel remembers a position, never a size.** The stylesheet pins
+both edges (`top: 14px; bottom: 14px`) so it spans the screen, and dragging it
+used to replace that with `bottom: auto` and an explicit height taken from the
+drag. There is no resize handle, so that height was only ever "whatever it
+happened to be when you last moved it" — frozen for good, and on a taller
+screen, most obviously in fullscreen, the panel then stopped short of the
+bottom. Height is left to the stylesheet now; it is frozen for the duration of
+a drag only, so the panel does not resize under the cursor. Measured: a dragged
+panel is 742px tall in an 800px window and 1022px in a 1080px one, 14px clear
+of the bottom in both.
+
+Entries written by older versions still carry an `h`, and it is ignored rather
+than rejected — `sanitize` had required `h > 120`, which would have quietly
+wiped every stored position once the field stopped being written.
+
 **The settings panel remembers a ratio, not a column.** Its x is stored as a
 fraction of the free space (0 flush left, 1 flush right), because an absolute x
 is only correct at the width it was recorded at. Drag it near the right edge at
