@@ -35,7 +35,6 @@
   ],
 
   "host_permissions": [
-    "https://api.gumroad.com/*",
     "https://api.spotify.com/*",
     "https://accounts.spotify.com/*",
     "https://api.open-meteo.com/*",

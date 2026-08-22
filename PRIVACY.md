@@ -27,7 +27,6 @@ All of it locally, in your own browser:
 | Uploaded wallpaper image or video | IndexedDB (as a Blob) | No |
 | Built-in backgrounds | Packaged in the extension | No — they are files inside it, never fetched |
 | Spotify access + refresh token | `chrome.storage.local` | Only back to Spotify |
-| Pro licence key | `chrome.storage.local` | Only to Gumroad, when checked |
 | Pong high score | `chrome.storage.local` | No |
 
 Uninstalling the extension deletes all of it. **⚙ → Data → Factory reset**
@@ -50,26 +49,20 @@ a widget off and it stops making requests entirely.
 | RSS feeds you enable | Headlines | Nothing beyond the request itself |
 | The bookmarked site | A sharper icon (`/apple-touch-icon.png`) | An ordinary image request |
 | Google / DuckDuckGo icon services | A sharper icon, only when the site has none | The domain name |
-| Gumroad | Checking a Pro licence key | The key you entered, and the product id — nothing else |
 
 Icon lookups happen at most **once per domain per 30 days**, and only in *Auto*
 mode (when Chrome's own icon is too small) or *Always high-res*. Setting
 **⚙ → Dock → Icon quality** to *Chrome only* stops them completely.
 
-### About the Pro licence check
+### Paid features
 
-If you buy Pro, the key you paste into **⚙ → Look → Interactive background** is
-sent to Gumroad once to confirm it is real, and then at most **once a week**
-afterwards. Nothing else accompanies it — no machine identifier, no browsing
-data, no email address gathered from your browser. The extension has no server
-of its own, so there is nowhere else for it to go.
+There are none. Every feature in this version, including the interactive
+backgrounds, is free and works without an account, a licence, or a purchase.
+The extension makes **no payment-related network request of any kind**, and the
+code that would check a licence is inert because no product is configured.
 
-The key is kept under its own storage key and is **deliberately excluded from
-settings exports**, so a settings file you share does not give your purchase
-away. If the check cannot reach Gumroad, Pro keeps working from the last
-successful check rather than switching itself off.
-
-If you never buy Pro, no request is ever made to Gumroad.
+If that ever changes, this policy and the extension's permissions will change
+with it, in the same update — not silently afterwards.
 
 ## Data the extension can read but does not transmit
 
@@ -100,8 +93,7 @@ applies to the request. The relevant ones are
 [Open-Meteo](https://open-meteo.com/en/terms),
 [LRCLIB](https://lrclib.net),
 [CoinGecko](https://www.coingecko.com/en/privacy),
-[DuckDuckGo](https://duckduckgo.com/privacy) and, for Pro licence checks only,
-[Gumroad](https://gumroad.com/privacy).
+[DuckDuckGo](https://duckduckgo.com/privacy).
 
 ## Children
 

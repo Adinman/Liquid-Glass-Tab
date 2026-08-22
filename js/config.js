@@ -107,7 +107,11 @@ export const FX_GAMES = [
 
 export const GUMROAD = {
   productId: '',
-  buyUrl: 'https://mujagic5.gumroad.com/l/cgtpro',
+  // The store root, not a guessed /l/<slug>. The slug is assigned when the
+  // product is published, and a wrong one is a 404 in front of somebody who
+  // was trying to pay; the root always resolves. Point this at the product's
+  // own page once it exists.
+  buyUrl: 'https://heymanme.gumroad.com',
 };
 
 export const ENGINES = {

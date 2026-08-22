@@ -56,7 +56,17 @@ export const PRO = {
   checking: false,
 };
 
-export const isPro = () => PRO.ok;
+/** Whether the paid features are available.
+ *
+ *  Note the second half. With no product id there is no way to check a key, so
+ *  there is no way to buy one either — and locking a feature behind a door with
+ *  no handle is worse than not shipping it. An unconfigured build therefore
+ *  gives everyone the features rather than nobody.
+ *
+ *  This is also the switch. Filling in GUMROAD.productId turns the paywall on
+ *  by itself; there is no second flag to remember, and no state where the id is
+ *  set but the gate is still open. */
+export const isPro = () => PRO.ok || !configured();
 export const configured = () => !!GUMROAD.productId;
 
 export function onProChange(fn) { listeners.add(fn); return () => listeners.delete(fn); }

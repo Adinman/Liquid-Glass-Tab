@@ -121,8 +121,8 @@ const group = (title, ...rows) => el('div', { class: 'set-group' }, el('h3', { t
 
 /* ---------- interactive background (pro) ---------- */
 
-/** Open a page in a new tab. `chrome.tabs` is not there in dev-preview.html,
- *  which is a plain page rather than an extension one. */
+/** Open a page in a new tab. `chrome.tabs` is absent when this runs outside an
+ *  extension context, such as the local dev harness, so fall back to window.open. */
 function openTab(url) {
   if (chrome?.tabs?.create) chrome.tabs.create({ url });
   else window.open(url, '_blank', 'noopener');
@@ -135,6 +135,13 @@ function openTab(url) {
  *  it scrolls past once instead of finding a Pro tab staring at them forever.
  */
 function proRows() {
+  // Checked before isPro(), which is deliberately true while unconfigured. No
+  // product means nothing to buy and nothing to check, so the panel says so in
+  // one line instead of showing a key box that cannot succeed.
+  if (!configured()) {
+    return [el('div', { class: 'hint' },
+      'Interactive backgrounds are free in this build.')];
+  }
   if (isPro()) {
     return [
       row('Pro', el('div', { class: 'row' },

@@ -476,9 +476,26 @@ belonging to somebody who never enables one never loads any of it.
 
 ### Pro and licensing
 
-The interactive backgrounds are the paid feature. Payment goes through
-**Gumroad**, which issues a licence key per sale; pasting that key into
-**⚙ → Look → Licence key** checks it against Gumroad's public
+**As shipped, the interactive backgrounds are free and this whole system is
+dormant.** Gumroad will not publish a product until payout details are on file,
+so there is nothing to sell against yet. The licence code is built, tested and
+switched off.
+
+`isPro()` returns true whenever `GUMROAD.productId` is empty. That is the point:
+with no product id there is no way to check a key, and therefore no way to buy
+one — so the features go to everybody rather than to nobody. Locking a door
+that has no handle is worse than not fitting the lock.
+
+Filling in `productId` is the **only** switch. There is no second flag, and no
+state where the id is set but the gate is still open. `package.py` enforces the
+other half: setting the id without adding `https://api.gumroad.com/*` to
+`host_permissions` fails the build, because otherwise every paying customer's
+Activate would fail with a message blaming their internet. With the id empty,
+the permission is deliberately absent — reviewers flag host permissions nothing
+calls.
+
+When it is switched on: Gumroad issues a licence key per sale; pasting that key
+into **⚙ → Look → Licence key** checks it against Gumroad's public
 `/v2/licenses/verify` endpoint and unlocks the feature on that device.
 
 That endpoint needs a product id and nothing else — no access token — which is
@@ -493,8 +510,13 @@ To set it up in a fork or a rebuild:
 3. Put it in `GUMROAD.productId` in `js/config.js`, and point `buyUrl` at the
    product page.
 
-Leaving `productId` empty is a supported state. The panel then says licensing is
-not set up rather than pretending to check, and every Pro feature stays locked.
+4. Add `https://api.gumroad.com/*` back to `host_permissions` in the manifest —
+   or just run `package.py`, which will refuse until you do.
+
+One thing to decide **before** publishing a free version: anyone who installs it
+gets the backgrounds, and taking them away in a later update to sell them is the
+kind of change people write reviews about. Either price it from the start, or
+plan to grandfather existing installs.
 
 **This is a lock on an honest door.** Every check runs in code the user owns, on
 a machine they control, and anyone willing to open devtools can flip the flag.

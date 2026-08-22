@@ -240,6 +240,41 @@ def check_fx_registry():
             fail(f"js/fx/index.js {block} exports '{extra}' but {table} does not name it")
 
 
+GUMROAD_HOST = "https://api.gumroad.com/*"
+
+
+def check_pro_wiring(m):
+    """The paywall and the host permission it needs must move together.
+
+    Two failures, opposite directions, both easy to ship by accident:
+
+      - A product id filled in without the host permission means Activate fails
+        with a network error for every paying customer, and the only symptom is
+        a message blaming their connection.
+      - The permission left in place while nothing calls it is an unjustified
+        request in the store listing, which is what review flags.
+
+    So the id is the single switch, and this makes the manifest follow it.
+    """
+    src = os.path.join(ROOT, "js", "config.js")
+    with open(src, encoding="utf-8") as f:
+        text = f.read()
+    m2 = re.search(r"export const GUMROAD = \{(.*?)\};", text, re.S)
+    if not m2:
+        fail("could not find the GUMROAD block in js/config.js")
+        return
+    pid = re.search(r"productId:\s*'([^']*)'", m2.group(1))
+    configured = bool(pid and pid.group(1).strip())
+    hosts = m.get("host_permissions", [])
+
+    if configured and GUMROAD_HOST not in hosts:
+        fail(f"GUMROAD.productId is set but {GUMROAD_HOST} is not in "
+             "host_permissions — licence checks would fail as network errors")
+    if not configured and GUMROAD_HOST in hosts:
+        warn(f"{GUMROAD_HOST} is requested but GUMROAD.productId is empty, so "
+             "nothing calls it — reviewers flag unused host permissions")
+
+
 def main():
     files = collect()
     m = check_manifest()
@@ -247,6 +282,7 @@ def main():
     check_unpacked_tree()
     check_assets_present(files)
     check_fx_registry()
+    check_pro_wiring(m)
     check_no_dev_references(files)
 
     for w in warnings:
