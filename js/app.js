@@ -573,19 +573,10 @@ function initEvents() {
   $('#btn-edit').addEventListener('click', toggleEdit);
   $('#btn-settings').addEventListener('click', () => window.dispatchEvent(new Event('lgt:settings')));
 
-  // Resizing must not rebuild. rebuildWidgets tears down every widget, which
-  // restarts the visualiser's audio graph and re-runs each widget's fetch —
-  // for a slider that fires every 40 ms.
-  // Turning window-scaling on or off re-applies every widget's zoom in place.
+  // Turning shrink-to-fit on or off re-applies every widget's zoom in place,
+  // rather than rebuilding: rebuildWidgets tears down every widget, which
+  // restarts the visualiser's audio graph and re-runs each widget's fetch.
   window.addEventListener('lgt:rescale', relayout);
-
-  window.addEventListener('lgt:widget-size', e => {
-    const { id, size } = e.detail || {};
-    const panel = $(`.widget[data-id="${CSS.escape(String(id))}"]`);
-    if (!panel) return;
-    applySize(panel, size);
-    scheduleRelayout();
-  });
 
   window.addEventListener('lgt:reload', () => {
     for (const panel of $$('.widget')) panel._reload?.(true);

@@ -1,8 +1,7 @@
 // The settings drawer. Every control writes straight to state and re-applies.
-import { $, $$, el, toast, dropCache, debounce, clamp } from './util.js';
+import { $, el, toast, dropCache, debounce, clamp } from './util.js';
 import { WALLPAPERS, ENGINES, WIDGET_META, DEFAULTS, HOLIDAYS,
-         WIDGET_SIZE, widgetSize,
-         PHOTOS, CLIPS, BG_PREFIX, bgThumb } from './config.js';
+         WIDGET_SIZE, PHOTOS, CLIPS, BG_PREFIX, bgThumb } from './config.js';
 import { countdownTarget } from './widgets/core.js';
 import { S, set, setWidget, resetAll, exportSettings, importSettings } from './state.js';
 import { applyTheme, applyVideoWallpaper, cssImageURL,
@@ -62,26 +61,6 @@ function slider(key, min, max, step = 1, after) {
     applyTheme(); after?.();
   }, 40));
   inp.addEventListener('input', show);
-  return el('span', { class: 'row' }, inp, out);
-}
-
-/** Per-widget size. Unlike slider() above this writes into S.widgets[id] and
- *  applies to the live panel by event, because rebuilding every widget on each
- *  step of a drag would restart the visualiser and re-run every widget fetch. */
-function widgetSizeSlider(id) {
-  const out = el('span', { class: 'faint tabular', style: { width: '38px', textAlign: 'right', fontSize: '11px' } });
-  const inp = el('input', {
-    type: 'range', min: WIDGET_SIZE.min, max: WIDGET_SIZE.max, step: WIDGET_SIZE.step,
-    value: widgetSize(S.widgets[id]), style: { width: '96px' },
-    title: 'Widget size',
-  });
-  const show = () => { out.textContent = inp.value + '%'; };
-  show();
-  inp.addEventListener('input', show);
-  inp.addEventListener('input', debounce(async () => {
-    window.dispatchEvent(new CustomEvent('lgt:widget-size', { detail: { id, size: +inp.value } }));
-    await setWidget(id, { size: +inp.value });
-  }, 40));
   return el('span', { class: 'row' }, inp, out);
 }
 
@@ -321,16 +300,16 @@ const PANELS = {
   ],
 
   widgets: () => [
-    group('Widgets', ...Object.entries(WIDGET_META).map(([id, label]) => {
+    group('Enabled widgets', ...Object.entries(WIDGET_META).map(([id, label]) => {
       const sw = el('div', { class: 'switch' + (S.widgets[id]?.on ? ' on' : '') }, el('i'));
       sw.addEventListener('click', async () => {
         sw.classList.toggle('on');
         await setWidget(id, { on: sw.classList.contains('on') });
         rebuild();
       });
-      // On/off and size on one row: 17 widgets in two lists would mean
-      // scrolling between a widget's own two controls.
-      return row(label, el('span', { class: 'row' }, widgetSizeSlider(id), sw));
+      // Size is not here on purpose: it belongs to the grip in edit mode, where
+      // you can see the widget you are sizing.
+      return row(label, sw);
     })),
     group('Layout',
       row('Shrink to fit', (() => {

@@ -286,9 +286,10 @@ puts everything back.
 
 **Resize any panel.** In the same edit mode a ⤡ grip appears at the
 bottom-right corner of every widget: drag it out to grow, in to shrink,
-double-click it for 100%. Range is 50–200%. Every widget also has a size
-slider under **⚙ → Widgets**, next to its on/off switch, for when you want a
-number rather than a gesture. Sizes reset along with positions.
+double-click it for 100%. Range is 50–200%. Sizes reset along with positions.
+
+Sizing lives on the grip and not in settings, deliberately — it is the one
+control you want to use while looking at the thing it changes.
 
 Resizing scales the whole panel — text, padding, icons and artwork together —
 rather than only stretching its width, so a bigger news panel gets bigger
