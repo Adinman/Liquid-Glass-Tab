@@ -63,7 +63,24 @@ function paintCachedWallpaper() {
     // A clip was playing. Its own first frame stands in until the video
     // decodes, exactly as paintStill does once settings arrive.
     const clip = bundled(CLIPS, BG_PREFIX + v.thumb);
-    if (clip) bg = `url("${clipPoster(clip.id)}")`;
+    if (clip) {
+      bg = `url("${clipPoster(clip.id)}")`;
+      // And start the video here too. It used to get its src inside
+      // applyVideoWallpaper, which runs after `await loadSettings()`, so the
+      // poster sat on screen for the storage read AND the fetch AND the first
+      // frame decode. Same file every time, so there is nothing to wait to
+      // find out. applyVideoWallpaper compares dataset.src and will leave this
+      // alone rather than reloading it.
+      const vid = document.getElementById('wp-video');
+      if (vid && !vid.dataset.src) {
+        vid.hidden = false;
+        vid.muted = true;                 // or autoplay is refused
+        vid.loop = true;
+        vid.dataset.src = clipFile(clip.id);
+        vid.src = clipFile(clip.id);
+        vid.play?.().catch(() => { /* autoplay can still be refused */ });
+      }
+    }
   } else if (v.photo) {
     const photo = bundled(PHOTOS, BG_PREFIX + v.photo);
     if (photo) bg = `url("${photoFile(photo.id)}")`;
@@ -363,6 +380,11 @@ function initVideoWallpaper() {
   const v = $('#wp-video');
   if (!v) return;
   v.addEventListener('loadeddata', () => { v.classList.add('ready'); setRate(v); });
+  // paintCachedWallpaper may have started the clip before this listener
+  // existed. If it already has a frame, loadeddata has been and gone, and
+  // without this the class is never added and the video stays invisible at
+  // opacity 0 for good.
+  if (v.readyState >= 2) { v.classList.add('ready'); setRate(v); }
   v.addEventListener('error', () => {
     v.classList.remove('ready');
     v.hidden = true;
