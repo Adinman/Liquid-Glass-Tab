@@ -294,7 +294,7 @@ function ensureReg() {
 
 /* Both entry points await a dynamic import before touching anything, and in
    that window another request can arrive - the storage listener re-applies the
-   scene whenever any other tab writes settings, and the pro listener does too.
+   scene whenever any other tab writes settings.
    Whoever asked last should win, so each request takes a ticket and drops out
    if it has been superseded. Without it, clicking Play Pong while a settings
    change was in flight tore the game down and left the page stuck behind the
@@ -342,11 +342,10 @@ export function stopGame() {
 
 export const gameRunning = () => !!(sceneDef && !sceneDef.ambient);
 
-/** Re-apply the current setting. `allowed` is the pro check, passed in rather
- *  than imported so js/pro.js stays the only place that decides. */
-export function refreshScene(allowed) {
-  if (gameRunning()) { if (!allowed) stopGame(); return; }
-  return setScene(allowed ? S.fxScene : '');
+/** Re-apply the current setting. */
+export function refreshScene() {
+  if (gameRunning()) return;
+  return setScene(S.fxScene);
 }
 
 export function initFX() {

@@ -65,22 +65,6 @@ export function bundled(list, value) {
   return list.find(b => b.id === id) || null;
 }
 
-/* ---------------- Pro ----------------
-   Where the paid features are sold and how a key is checked.
-
-   `productId` is Gumroad's own public identifier for the product — it appears
-   in the product page's markup, and the verify endpoint it is used with needs
-   no access token. It is not a secret and nothing here should ever hold one:
-   an extension is shipped as readable source, so a key placed in it is a key
-   published.
-
-   Leaving productId empty is a supported state, not a broken one. The pro
-   panel then says licensing is not set up rather than pretending to check, and
-   every pro feature stays locked. Fill it in once the Gumroad product exists.
-
-   Find it by opening the product page and searching the source for
-   "product_id", or by taking the last segment of the product's permalink URL
-   from the Gumroad dashboard. */
 /* Interactive backgrounds: names and descriptions only.
 
    The implementations live in js/fx/ and are imported the first time one is
@@ -104,15 +88,6 @@ export const FX_GAMES = [
   { id: 'pong', name: 'Pong',
     blurb: 'Endless rally against the computer. It gets faster the longer you last.' },
 ];
-
-export const GUMROAD = {
-  productId: '',
-  // The store root, not a guessed /l/<slug>. The slug is assigned when the
-  // product is published, and a wrong one is a 404 in front of somebody who
-  // was trying to pay; the root always resolves. Point this at the product's
-  // own page once it exists.
-  buyUrl: 'https://heymanme.gumroad.com',
-};
 
 export const ENGINES = {
   google:     { name: 'Google',     url: 'https://www.google.com/search?q=%s' },
@@ -376,12 +351,11 @@ export const DEFAULTS = {
   // panels look washed out well before the wallpaper looks bright.
   fxLightLift: 114,
 
-  // interactive background (pro). '' is none; anything else is an id in
+  // Interactive background. '' is none; anything else is an id in
   // js/fx/index.js SCENES. An unknown id resolves to nothing rather than
   // throwing, so removing a scene in a later version cannot brick a tab.
   fxScene: '',
-  // Pong's all-time record. Kept in settings rather than with the licence
-  // because it is the user's, not the purchase's — it survives deactivating.
+  // Pong's all-time record.
   pongBest: 0,
 
   // homescreens. Widgets are shared across all of them by design; only the

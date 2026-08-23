@@ -431,7 +431,7 @@ sound. The animated colour blobs turn themselves off while a video is set so
 they don't veil it. If the file can't be decoded, it hides itself and your
 gradient shows through instead.
 
-### Interactive backgrounds (Pro)
+### Interactive backgrounds
 
 **⚙ → Look → Interactive background.** Three things that react to the mouse,
 drawn on a canvas that sits in the wallpaper stack — above the colour blobs,
@@ -499,64 +499,6 @@ below the widgets — so if a widget covers the switch, the click belongs to the
 widget and there is no way to grab the switch underneath to drag it out. That is
 what **⚙ → Look → Light switch → Reset position** is for; it is the only way
 back from a buried switch.
-
-### Pro and licensing
-
-**As shipped, the interactive backgrounds are free and this whole system is
-dormant.** Gumroad will not publish a product until payout details are on file,
-so there is nothing to sell against yet. The licence code is built, tested and
-switched off.
-
-`isPro()` returns true whenever `GUMROAD.productId` is empty. That is the point:
-with no product id there is no way to check a key, and therefore no way to buy
-one — so the features go to everybody rather than to nobody. Locking a door
-that has no handle is worse than not fitting the lock.
-
-Filling in `productId` is the **only** switch. There is no second flag, and no
-state where the id is set but the gate is still open. `package.py` enforces the
-other half: setting the id without adding `https://api.gumroad.com/*` to
-`host_permissions` fails the build, because otherwise every paying customer's
-Activate would fail with a message blaming their internet. With the id empty,
-the permission is deliberately absent — reviewers flag host permissions nothing
-calls.
-
-When it is switched on: Gumroad issues a licence key per sale; pasting that key
-into **⚙ → Look → Licence key** checks it against Gumroad's public
-`/v2/licenses/verify` endpoint and unlocks the feature on that device.
-
-That endpoint needs a product id and nothing else — no access token — which is
-the only reason this can live in an extension at all. An extension ships as
-readable source, so **anything secret placed in it is published**; there is no
-API key here and there must never be one.
-
-To set it up in a fork or a rebuild:
-
-1. Create the product on Gumroad and enable **generate a licence key per sale**.
-2. Find its product id — it is in the product page's own markup, and is public.
-3. Put it in `GUMROAD.productId` in `js/config.js`, and point `buyUrl` at the
-   product page.
-
-4. Add `https://api.gumroad.com/*` back to `host_permissions` in the manifest —
-   or just run `package.py`, which will refuse until you do.
-
-One thing to decide **before** publishing a free version: anyone who installs it
-gets the backgrounds, and taking them away in a later update to sell them is the
-kind of change people write reviews about. Either price it from the start, or
-plan to grandfather existing installs.
-
-**This is a lock on an honest door.** Every check runs in code the user owns, on
-a machine they control, and anyone willing to open devtools can flip the flag.
-That is true of every client-side licence and is not worth pretending otherwise
-— the goal is that buying is easier than bypassing. So there is no obfuscation,
-no fingerprinting, and nothing is sent home except the key the user chose to
-type. Two consequences worth keeping:
-
-- The key lives under its own `chrome.storage.local` key, **not** in settings,
-  and is excluded from exports. A settings file people email around must not
-  carry somebody's purchase.
-- **A network failure never revokes anything.** Aeroplanes, captive portals and
-  Gumroad outages are all likelier than a refund. Only an explicit
-  `success: false` turns Pro off; re-checks are weekly, never per tab.
 
 ### Icon quality
 

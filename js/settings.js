@@ -2,7 +2,7 @@
 import { $, el, toast, dropCache, debounce, clamp } from './util.js';
 import { WALLPAPERS, ENGINES, WIDGET_META, DEFAULTS, HOLIDAYS,
          WIDGET_SIZE, PHOTOS, CLIPS, BG_PREFIX, bgThumb,
-         FX_SCENES, FX_GAMES, GUMROAD } from './config.js';
+         FX_SCENES, FX_GAMES } from './config.js';
 import { countdownTarget } from './widgets/core.js';
 import { S, set, setWidget, resetAll, exportSettings, importSettings } from './state.js';
 import { applyTheme, applyVideoWallpaper, cssImageURL,
@@ -14,7 +14,6 @@ import { activeFolder, activeSpace, spaceList } from './spaces.js';
 import { applyDockSettings, renderDock } from './dock.js';
 import { searchPlaces, detectPlace } from './widgets/index.js';
 import * as sp from './spotify.js';
-import { PRO, isPro, activate, deactivate, configured } from './pro.js';
 import { refreshScene, startGame } from './fx.js';
 
 let rebuild = () => {};
@@ -119,7 +118,7 @@ function bgSwatch(entry, { clip = false, on, onPick }) {
 
 const group = (title, ...rows) => el('div', { class: 'set-group' }, el('h3', { text: title }), ...rows);
 
-/* ---------- interactive background (pro) ---------- */
+/* ---------- interactive background ---------- */
 
 /** Open a page in a new tab. `chrome.tabs` is absent when this runs outside an
  *  extension context, such as the local dev harness, so fall back to window.open. */
@@ -128,110 +127,34 @@ function openTab(url) {
   else window.open(url, '_blank', 'noopener');
 }
 
-/** The licence box.
- *
- *  It lives under the feature it unlocks rather than in a tab of its own: the
- *  price belongs next to the thing being sold, and somebody who does not want
- *  it scrolls past once instead of finding a Pro tab staring at them forever.
- */
-function proRows() {
-  // Checked before isPro(), which is deliberately true while unconfigured. No
-  // product means nothing to buy and nothing to check, so the panel says so in
-  // one line instead of showing a key box that cannot succeed.
-  // Nothing to sell against, so the group is just the picker. No note saying
-  // so: a line explaining that a free thing is free is noise.
-  if (!configured()) return [];
-  if (isPro()) {
-    return [
-      row('Pro', el('div', { class: 'row' },
-        el('span', { class: 'faint', style: { fontSize: '12px' },
-          text: PRO.email ? `active · ${PRO.email}` : 'active' }),
-        el('button', {
-          class: 'btn', text: 'Deactivate',
-          onclick: async () => {
-            await deactivate();
-            refreshScene(false);
-            draw();
-            toast('Pro deactivated on this device');
-          },
-        }))),
-    ];
-  }
-
-  const input = el('input', {
-    type: 'text', placeholder: 'paste your licence key',
-    spellcheck: 'false', autocomplete: 'off',
-  });
-  const btn = el('button', { class: 'btn primary', text: 'Activate' });
-
-  const go = async () => {
-    if (btn.disabled) return;
-    btn.disabled = true;
-    btn.textContent = 'Checking…';
-    const r = await activate(input.value);
-    btn.disabled = false;
-    btn.textContent = 'Activate';
-    toast(r.message);
-    // Redrawing on failure too, so a key that has just been refunded flips the
-    // panel back to the locked state rather than leaving a stale one.
-    if (r.ok) { refreshScene(true); draw(); }
-  };
-
-  btn.addEventListener('click', go);
-  input.addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
-
-  return [
-    row('Get Pro', el('button', {
-      class: 'btn', text: 'Buy a licence…',
-      onclick: () => openTab(GUMROAD.buyUrl),
-    })),
-    row('Licence key', el('div', { class: 'row' }, input, btn)),
-    !configured() && el('div', { class: 'hint' },
-      'This build has no product id set, so keys cannot be checked yet. '
-      + 'See GUMROAD in js/config.js.'),
-    el('div', { class: 'hint' },
-      'The key is stored on this device only and is never included in a '
-      + 'settings export. Activating checks it with Gumroad; nothing else is sent.'),
-  ];
-}
-
-/** Scene picker, game launcher and the paywall, in one group. */
+/** Scene picker and game launcher. */
 function fxGroup() {
-  const pro = isPro();
-
   const pick = async id => {
-    if (!pro) { toast('Interactive backgrounds are a Pro feature'); return; }
     // Clicking the active one turns it off, matching the wallpaper swatches
     // above — otherwise a scene could only ever be swapped, never removed.
     await set({ fxScene: S.fxScene === id ? '' : id });
-    refreshScene(true);
+    refreshScene();
     draw();
   };
 
   const play = async () => {
-    if (!pro) { toast('Pong is a Pro feature'); return; }
     // The drawer covers a third of the screen and the game needs all of it.
     $('#settings').hidden = true;
     if (!await startGame('pong')) toast('Could not start the game');
   };
 
   const card = (entry, on, onclick) => el('button', {
-    class: ['fx-card', on ? 'on' : '', pro ? '' : 'locked'].filter(Boolean).join(' '),
+    class: ['fx-card', on ? 'on' : ''].filter(Boolean).join(' '),
     type: 'button', onclick,
   },
     el('span', { class: 'fx-name', text: entry.name }),
     el('span', { class: 'fx-blurb', text: entry.blurb }),
-    !pro && el('span', { class: 'fx-lock', text: 'PRO' }),
     on && el('span', { class: 'fx-on', text: 'ON' }),
   );
 
   return group('Interactive background',
     el('div', { class: 'fx-grid' },
-      // `pro &&`: without a licence the scene is not running, so marking it ON
-      // would be a lie, and the ON and PRO badges share a corner and would sit
-      // on top of each other. The stored choice is untouched either way and
-      // comes back the moment a key is entered.
-      ...FX_SCENES.map(s => card(s, pro && S.fxScene === s.id, () => pick(s.id))),
+      ...FX_SCENES.map(s => card(s, S.fxScene === s.id, () => pick(s.id))),
       ...FX_GAMES.map(g => card(g, false, play)),
     ),
     // Only while the switch is actually on screen — a reset button for
@@ -249,7 +172,6 @@ function fxGroup() {
       class: 'faint tabular', style: { fontSize: '12px' },
       text: String(S.pongBest),
     })),
-    ...proRows(),
   );
 }
 

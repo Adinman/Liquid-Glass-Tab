@@ -54,15 +54,10 @@ Icon lookups happen at most **once per domain per 30 days**, and only in *Auto*
 mode (when Chrome's own icon is too small) or *Always high-res*. Setting
 **⚙ → Dock → Icon quality** to *Chrome only* stops them completely.
 
-### Paid features
+### Payments
 
-There are none. Every feature in this version, including the interactive
-backgrounds, is free and works without an account, a licence, or a purchase.
-The extension makes **no payment-related network request of any kind**, and the
-code that would check a licence is inert because no product is configured.
-
-If that ever changes, this policy and the extension's permissions will change
-with it, in the same update — not silently afterwards.
+There are none. Every feature is free and works without an account or a sign-up
+of any kind, and the extension makes **no payment-related network request**.
 
 ## Data the extension can read but does not transmit
 
