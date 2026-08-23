@@ -183,6 +183,13 @@ function rememberWallpaper() {
     // Both decide whether #wp-mesh is drawn at all — see paintCachedWallpaper.
     wp: document.documentElement.dataset.wp,
     mesh: parseFloat(document.documentElement.style.getPropertyValue('--mesh-op')),
+    // The light switch brightens the wallpaper via a CSS filter keyed off
+    // data-lights. Without it here, early.js paints the wallpaper unlit and
+    // applyTheme brightens it once the modules load — a visible pop on every
+    // single new tab, which is the exact class of bug early.js was added to
+    // remove. `lift` rides along for the same reason.
+    lights: S.fxLights ? 1 : 0,
+    lift: Math.max(1, (Number(S.fxLightLift) || 114) / 100),
   };
   const clip = bundled(CLIPS, S.wallpaperVideo || '');
   const photo = bundled(PHOTOS, S.wallpaperCustom || '');

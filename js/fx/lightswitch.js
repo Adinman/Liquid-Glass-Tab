@@ -56,9 +56,17 @@ export const lightswitch = {
     let grab = null;                    // {dx, dy, fromX, fromY} while held
     let moved = false;
 
+    // Not `clamp(...) || 50`. That reads as "or the default", but 0 is falsy,
+    // so a switch at the very left edge would jump to the middle every time the
+    // scene started. Same falsy-zero trap that inRange() in js/state.js exists
+    // to avoid; the || was really there to catch NaN, so catch NaN explicitly.
+    const at = (v, fallback) => {
+      const n = Number(v);
+      return Number.isFinite(n) ? clamp(n, 0, 100) : fallback;
+    };
     const pos = () => ({
-      x: clamp(Number(S.fxSwitch?.x), 0, 100) || 50,
-      y: clamp(Number(S.fxSwitch?.y), 0, 100) || 72,
+      x: at(S.fxSwitch?.x, 50),
+      y: at(S.fxSwitch?.y, 72),
     });
 
     function layout() {
