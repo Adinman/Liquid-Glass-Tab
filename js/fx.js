@@ -37,6 +37,25 @@ const UI_SELECTOR = '.widget,#dock-zone,#spaces,#spaces-popover,#palette-overlay
    the fill rate for something sitting behind blurred glass. */
 const MAX_DPR = 2;
 
+/* And a hard ceiling on total device pixels, because the fill rate is not the
+   expensive part - the memory is. A canvas costs width x height x 4 bytes of
+   backing store no matter what is drawn on it, so a full-screen one at dpr 2 on
+   a 1440p display is 56 MB, held for as long as the scene is on, in every open
+   new tab. 4.2 million pixels caps that at about 17 MB.
+
+   This costs nothing on ordinary displays: at 1920x1080 with dpr 1 the ratio is
+   already under the cap, so those users keep the full resolution they always
+   had. It only bites on large or high-density screens, where the alternative
+   was tens of megabytes for a field of dots behind blurred glass. */
+const MAX_PIXELS = 4.2e6;
+const MIN_SCALE = 0.75;      // never so soft that the dots turn to mush
+
+function scaleFor(w, h) {
+  const want = Math.min(MAX_DPR, devicePixelRatio || 1);
+  const fit = Math.sqrt(MAX_PIXELS / Math.max(1, w * h));
+  return Math.max(MIN_SCALE, Math.min(want, fit));
+}
+
 let canvas = null;
 let c2d = null;
 let raf = 0;
@@ -75,9 +94,15 @@ const host = {
 
 function resize() {
   if (!canvas || !c2d) return;
+  // No scene means no pixels. Without this the plain window-resize listener
+  // sizes the canvas to the full viewport for somebody who has never turned an
+  // interactive background on, and that allocation is then held for the life of
+  // the tab - measured at 3.5 MB in a 720p window, and 56 MB at 1440p on a
+  // high-density display.
+  if (!sceneDef) return;
   const w = canvas.clientWidth || innerWidth;
   const h = canvas.clientHeight || innerHeight;
-  const dpr = Math.min(MAX_DPR, devicePixelRatio || 1);
+  const dpr = scaleFor(w, h);
   const bw = Math.max(1, Math.round(w * dpr));
   const bh = Math.max(1, Math.round(h * dpr));
   // Assigning width/height clears the canvas and reallocates the backing store,
@@ -198,13 +223,33 @@ function listen(on) {
 
 /* ---------------- scene lifecycle ---------------- */
 
+/** `data-fx-game` fades the widgets and dock to 7% and makes them
+ *  click-through. It is derived from the running scene here and set nowhere
+ *  else, because managing it alongside the scene let the two disagree: a
+ *  setScene landing just after a startGame replaced the game with an ambient
+ *  scene and left the attribute behind, and stopGame() then early-returned
+ *  because no game was running. The result was every widget, the dock and the
+ *  settings button invisible and unclickable, which Escape could not recover
+ *  and only a reload cleared. */
+function applyGameAttr() {
+  const root = document.documentElement;
+  if (sceneDef && !sceneDef.ambient) root.dataset.fxGame = sceneDef.id;
+  else delete root.dataset.fxGame;
+}
+
 function stop() {
   pause();
   try { scene?.stop?.(); } catch { /* a failing teardown must not block the next scene */ }
   scene = null; sceneDef = null;
+  applyGameAttr();
   listen(false);
-  if (c2d) c2d.clearRect(0, 0, host.W, host.H);
-  if (canvas) canvas.hidden = true;
+  if (canvas) {
+    canvas.hidden = true;
+    // Hiding an element does not free its backing store; only resizing it does.
+    // Zero is the point - an idle tab should hold no canvas memory at all.
+    canvas.width = 0; canvas.height = 0;
+  }
+  host.W = 0; host.H = 0;
 }
 
 function run(def) {
@@ -212,12 +257,16 @@ function run(def) {
   if (!def || !canvas) return;
   canvas.hidden = false;
   sceneDef = def;
+  applyGameAttr();
   resize();                          // before create, so W/H are real
   try {
     scene = def.create(host);
   } catch (e) {
     console.error('[cgt] fx scene', def.id, e);
-    sceneDef = null; canvas.hidden = true;
+    sceneDef = null;
+    applyGameAttr();
+    canvas.hidden = true;
+    canvas.width = 0; canvas.height = 0;
     return;
   }
   listen(true);
@@ -243,13 +292,27 @@ function ensureReg() {
   return regPromise;
 }
 
+/* Both entry points await a dynamic import before touching anything, and in
+   that window another request can arrive - the storage listener re-applies the
+   scene whenever any other tab writes settings, and the pro listener does too.
+   Whoever asked last should win, so each request takes a ticket and drops out
+   if it has been superseded. Without it, clicking Play Pong while a settings
+   change was in flight tore the game down and left the page stuck behind the
+   game's own dimming. */
+let gen = 0;
+
 /** Switch the ambient background. '' or an unknown id means none. */
 export async function setScene(id) {
   // A game is on screen: remember the choice and apply it when the game ends,
   // rather than yanking the canvas out from under it.
-  if (sceneDef && !sceneDef.ambient) { suspended = id || null; return; }
+  if (gameRunning()) { suspended = id || null; return; }
+  const mine = ++gen;
   if (!id) { stop(); return; }
   const reg = await ensureReg();
+  if (mine !== gen) return;                     // superseded while importing
+  // Re-checked after the await too: a game may have started in the gap, and the
+  // check at the top of the function is by then stale.
+  if (gameRunning()) { suspended = id || null; return; }
   // hasOwn, not a bare lookup: SCENES is an object literal, so SCENES.toString
   // and SCENES.constructor are both truthy and neither is a scene.
   const def = reg && Object.hasOwn(reg.SCENES, id) ? reg.SCENES[id] : null;
@@ -258,20 +321,20 @@ export async function setScene(id) {
 
 /** Launch a game scene, suspending any ambient one. */
 export async function startGame(id) {
+  const mine = ++gen;
   const reg = await ensureReg();
+  if (mine !== gen) return false;               // superseded while importing
   const def = id && reg && Object.hasOwn(reg.GAMES, id) ? reg.GAMES[id] : null;
   if (!def) return false;
   suspended = sceneDef?.ambient ? sceneDef.id : null;
-  // Fades the widgets and dock down; see css/base.css. Without it a game is
-  // played through a news feed, and clicks meant for the game hit bookmarks.
-  document.documentElement.dataset.fxGame = id;
-  run(def);
+  run(def);                                     // sets data-fx-game via applyGameAttr
   return true;
 }
 
 export function stopGame() {
-  if (!sceneDef || sceneDef.ambient) return;
-  delete document.documentElement.dataset.fxGame;
+  // The attribute is cleared by stop() -> applyGameAttr, never here, so it
+  // cannot survive this early return.
+  if (!gameRunning()) { applyGameAttr(); return; }
   const back = suspended; suspended = null;
   stop();
   if (back) setScene(back);

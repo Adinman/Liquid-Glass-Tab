@@ -138,10 +138,9 @@ function proRows() {
   // Checked before isPro(), which is deliberately true while unconfigured. No
   // product means nothing to buy and nothing to check, so the panel says so in
   // one line instead of showing a key box that cannot succeed.
-  if (!configured()) {
-    return [el('div', { class: 'hint' },
-      'Interactive backgrounds are free in this build.')];
-  }
+  // Nothing to sell against, so the group is just the picker. No note saying
+  // so: a line explaining that a free thing is free is noise.
+  if (!configured()) return [];
   if (isPro()) {
     return [
       row('Pro', el('div', { class: 'row' },
@@ -250,11 +249,6 @@ function fxGroup() {
       class: 'faint tabular', style: { fontSize: '12px' },
       text: String(S.pongBest),
     })),
-    el('div', { class: 'hint' },
-      'Backgrounds react to the mouse and pause when the tab is hidden. '
-      + 'Hold the mouse down to push the particles away. '
-      + 'The light switch can be dragged, and brightens the wallpaper and glass '
-      + 'while it is on. Press Esc to leave a game.'),
     ...proRows(),
   );
 }
@@ -640,13 +634,24 @@ const PANELS = {
 
     return [
       group('Spotify setup',
-        el('div', { class: 'hint', style: { lineHeight: 1.6, marginBottom: '10px' } },
-          '1. Create an app at developer.spotify.com/dashboard  ·  2. Paste its Client ID below  ·  '
+        el('div', { class: 'hint', style: { lineHeight: 1.6, marginBottom: '8px' } },
+          '1. Create an app on the Spotify dashboard  ·  2. Paste its Client ID below  ·  '
           + '3. Add this exact Redirect URI to the app  ·  4. Click Connect.'),
+        // A button rather than a bare URL in the text. The dashboard address was
+        // written out for people to retype into the address bar, which is a
+        // silly thing to ask when the page can just open it.
+        el('div', { class: 'row', style: { marginBottom: '10px' } },
+          el('button', { class: 'btn', text: 'Open Spotify dashboard ↗',
+            onclick: () => openTab('https://developer.spotify.com/dashboard') })),
         row('Redirect URI', ''),
         el('div', { class: 'code', text: uri }),
         el('button', { class: 'btn', style: { marginTop: '6px' }, text: 'Copy redirect URI',
-          onclick: () => navigator.clipboard.writeText(uri).then(() => toast('Copied')) }),
+          onclick: () => navigator.clipboard.writeText(uri)
+            .then(() => toast('Copied'))
+            // Clipboard writes are refused when the document is not focused,
+            // which happens if the click lands while another window has focus.
+            // Silently doing nothing looks like a broken button.
+            .catch(() => toast('Could not copy — select the URI above instead')) }),
         row('Client ID', text('spotifyClientId', 'e.g. 3f9a…')),
         row('Status', status),
         el('div', { class: 'row', style: { marginTop: '8px' } },
