@@ -87,6 +87,11 @@ const host = {
   accent: () => cssVar('--accent', '#7cc6ff'),
   accent2: () => cssVar('--accent-2', '#b48bff'),
   light: () => document.documentElement.dataset.scheme === 'light',
+  // Whether the user has asked for less motion. For an ambient scene this also
+  // means the loop is off and the scene is repainted only on pointer input, so
+  // anything that eases toward a target has to snap instead — otherwise the
+  // easing stalls wherever the last event left it.
+  reduced: () => reduced.matches,
   exit: () => stopGame(),          // games hand the screen back with this
 };
 
@@ -116,6 +121,12 @@ function resize() {
   // of them ever has to know what dpr is.
   c2d.setTransform(dpr, 0, 0, dpr, 0, 0);
   scene?.resize?.();
+  // Assigning width/height above cleared the canvas. When the loop is running
+  // the next frame covers that; when it is not — reduced motion, an ambient
+  // scene — nothing else ever would, and resizing the window left the scene
+  // blank for the rest of the tab's life. Not `drawStillOnInput`: this is not
+  // input, and a decorative scene still has to be on screen after a resize.
+  if (scene && !shouldRun()) drawStill();
 }
 
 /* ---------------- the loop ---------------- */
@@ -163,22 +174,42 @@ function pause() {
   raf = 0;
 }
 
-/** One frame, outside the loop. What a reduced-motion ambient scene gets: a
- *  light switch you cannot see is worse than one that does not animate. */
+/** One frame, outside the loop. What a scene gets when the loop will not run:
+ *  a still picture rather than a blank canvas, since the scene is switched on
+ *  in settings and showing nothing would just look broken. */
 function drawStill() {
   if (!scene || !c2d) return;
   c2d.clearRect(0, 0, host.W, host.H);
   try { scene.frame(performance.now(), 16.7); } catch { /* see tick */ }
 }
 
+/** The same thing, but only for a scene that is interactive rather than
+ *  decorative — currently just the light switch, which has to be seen to
+ *  respond to a hover or a click even when nothing is animating.
+ *
+ *  Gated, because `frame` is a simulation step and not a redraw. Particles
+ *  moves every particle in it, so repainting on each pointermove animated the
+ *  whole field at roughly 60 fps under prefers-reduced-motion — mouse-gated
+ *  motion, which is the one thing that setting asks for less of. A decorative
+ *  scene gets its single frame from `run()` and then holds still. */
+function drawStillOnInput() {
+  if (sceneDef?.interactive) drawStill();
+}
+
 /* ---------------- input ---------------- */
 
 function onMove(e) {
   pointer.x = e.clientX; pointer.y = e.clientY; pointer.inside = true;
-  if (shouldRun()) start(); else drawStill();
+  if (shouldRun()) start(); else drawStillOnInput();
 }
 
-function onLeave() { pointer.inside = false; }
+function onLeave() {
+  if (!pointer.inside) return;
+  pointer.inside = false;
+  // The hover hint under the light switch has to clear on the way out, and
+  // with the loop off nothing else would ever repaint it.
+  if (!shouldRun()) drawStillOnInput();
+}
 
 function onDown(e) {
   if (e.button !== 0) return;
@@ -186,7 +217,7 @@ function onDown(e) {
   pointer.down = true;
   pointer.x = e.clientX; pointer.y = e.clientY;
   scene?.pointerdown?.(e.clientX, e.clientY);
-  if (shouldRun()) start(); else drawStill();
+  if (shouldRun()) start(); else drawStillOnInput();
 }
 
 /** Clearing `down` matters more than setting it: hold-to-repel and the light
@@ -201,11 +232,25 @@ function onUp() {
   scene?.pointerup?.();
 }
 
+/* Panels that own Escape ahead of a game. A game takes the whole screen, but
+   the keyboard shortcuts are not disabled while one runs and neither of these
+   is dimmed by `data-fx-game`, so the settings drawer and the palette can both
+   be opened over the top of it. Each closes itself on Escape from a listener on
+   `document`, and onKey below is on `window` in the capture phase — so without
+   this check the game swallowed the key before any of them saw it, and closing
+   the drawer took two presses: one that quit the game, and one for the drawer. */
+const OVERLAY_SELECTOR = '#settings,#palette-overlay,#dock-flyout,#dock-popover,#spaces-popover';
+
+const overlayOpen = () =>
+  [...document.querySelectorAll(OVERLAY_SELECTOR)].some(el => !el.hidden);
+
 /** A scene returning true has consumed the key. Only the games do, and only for
  *  Escape and the pause key — the palette, the edit-mode shortcut and every
  *  other binding on the page must keep working underneath an ambient scene. */
 function onKey(e) {
-  if (scene?.key?.(e) === true) { e.preventDefault(); e.stopPropagation(); }
+  if (!scene?.key) return;              // ambient scenes never take the keyboard
+  if (e.key === 'Escape' && overlayOpen()) return;
+  if (scene.key(e) === true) { e.preventDefault(); e.stopPropagation(); }
 }
 
 function listen(on) {
@@ -217,8 +262,18 @@ function listen(on) {
   fn('pointerup', onUp, { capture: true, passive: true });
   fn('pointercancel', onUp, { capture: true, passive: true });
   fn('blur', onUp);
-  fn('pointerleave', onLeave, { passive: true });
   fn('keydown', onKey, true);
+  // Not on `window`, and not with the others. pointerleave does not bubble, so
+  // a window listener in the bubble phase never fired at all — `inside` latched
+  // true the first time the cursor moved and stayed there for the life of the
+  // tab, leaving particles threading to a cursor that had left the window and
+  // the light switch's hover hint painted permanently. Capture on `window`
+  // would fire, but it fires for every element the pointer leaves; on the root
+  // element it fires once, when the pointer leaves the document, which is the
+  // only thing this cares about.
+  const root = document.documentElement;
+  if (on) root.addEventListener('pointerleave', onLeave, { passive: true });
+  else root.removeEventListener('pointerleave', onLeave, { passive: true });
 }
 
 /* ---------------- scene lifecycle ---------------- */
@@ -316,6 +371,14 @@ export async function setScene(id) {
   // hasOwn, not a bare lookup: SCENES is an object literal, so SCENES.toString
   // and SCENES.constructor are both truthy and neither is a scene.
   const def = reg && Object.hasOwn(reg.SCENES, id) ? reg.SCENES[id] : null;
+  // Already running exactly this scene, so leave it alone. refreshScene() runs
+  // on every settings write from any other tab, and tearing the scene down to
+  // build an identical one is not free: `create` respawns the entire particle
+  // field at fresh random positions and restarts the light switch's six-second
+  // intro breath. Nudging a slider in one tab made the background visibly jump
+  // in every other open tab. Nothing is lost by skipping it — scenes read S
+  // live rather than copying it at creation.
+  if (def && def === sceneDef) return;
   if (def) run(def); else stop();
 }
 
@@ -326,7 +389,14 @@ export async function startGame(id) {
   if (mine !== gen) return false;               // superseded while importing
   const def = id && reg && Object.hasOwn(reg.GAMES, id) ? reg.GAMES[id] : null;
   if (!def) return false;
-  suspended = sceneDef?.ambient ? sceneDef.id : null;
+  // Only when a game is not already on screen. Starting one from the settings
+  // drawer while another is running — which is reachable, since `,` still opens
+  // the drawer mid-game and it is not dimmed by data-fx-game — took this branch
+  // with sceneDef pointing at the outgoing *game*, so `ambient` was false and
+  // the ambient scene the first game had suspended was overwritten with null.
+  // Escape then restored nothing: the canvas went away while settings still
+  // showed the scene as ON, and only a reload brought it back.
+  if (!gameRunning()) suspended = sceneDef?.ambient ? sceneDef.id : null;
   run(def);                                     // sets data-fx-game via applyGameAttr
   return true;
 }

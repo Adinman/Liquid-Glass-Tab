@@ -38,7 +38,12 @@ export const pong = {
     let state = 'ready';               // ready | play | over
     let wait = SERVE_DELAY;
     let rally = 0;
-    let best = Number(S.pongBest) || 0;
+    // Read live, never snapshotted. A copy taken here goes stale and there is
+    // nothing to correct it: refreshScene() deliberately leaves a running game
+    // alone, so a tab that opened Pong while the record was 0 still believed
+    // that after another tab had set it to 30 — and a run of 1 then beat its
+    // own stale copy and wrote 1 over the real record.
+    const record = () => Number(S.pongBest) || 0;
     let beat = false;                  // this run passed the old record
     let flash = 0;                     // ms of impact flash left
     let over = 0;                      // ms since the game ended
@@ -75,11 +80,10 @@ export const pong = {
     function finish() {
       state = 'over';
       over = 0;
-      if (rally > best) {
-        best = rally;
+      if (rally > record()) {
         beat = true;
         // One write per game, and it is the only thing this scene persists.
-        set({ pongBest: best });
+        set({ pongBest: rally });
       }
     }
 
@@ -261,6 +265,7 @@ export const pong = {
 
         c.font = '500 13px system-ui, sans-serif';
         c.fillStyle = 'rgba(255,255,255,.42)';
+        const best = record();
         c.fillText(best ? `best ${best}` : 'no record yet', W / 2, H * 0.34);
 
         if (state === 'over') {

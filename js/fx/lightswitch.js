@@ -41,6 +41,12 @@ export const lightswitch = {
   // Name and description live in FX_SCENES in js/config.js, not here: the
   // settings picker has to list every scene without importing any of them.
   ambient: true,
+  // A control, not decoration. Under prefers-reduced-motion the loop does not
+  // run, and js/fx.js repaints an `interactive` scene on pointer input so that
+  // a hover and a click still visibly do something. A decorative scene is not
+  // repainted, because for one of those `frame` advances a simulation and
+  // repainting it is how you animate it — see drawStillOnInput.
+  interactive: true,
 
   create(host) {
     // Where the plate is, recomputed every frame and read by the hit test. Kept
@@ -134,15 +140,26 @@ export const lightswitch = {
           layout();
         }
 
+        // Under reduced motion there is no loop: js/fx.js repaints this scene
+        // only when the pointer does something, so an eased value would stall
+        // wherever the last event left it — click and hold still, and the
+        // rocker freezes halfway between on and off while the room lights are
+        // already on. Snapping is both the accessible behaviour and the only
+        // coherent one when frames arrive at the speed of the mouse.
+        const snap = host.reduced?.() === true;
+        const ease = (v, target, rate) => snap ? target : approach(v, target, rate, f);
+
         const over = p.inside && inside(p.x, p.y);
-        hover = approach(hover, over ? 1 : 0, 0.18, f);
-        lit = approach(lit, S.fxLights ? 1 : 0, 0.22, f);
-        press = approach(press, 0, 0.12, f);
+        hover = ease(hover, over ? 1 : 0, 0.18);
+        lit = ease(lit, S.fxLights ? 1 : 0, 0.22);
+        press = ease(press, 0, 0.12);
 
         // A slow breath for the first few seconds so the switch is noticed at
         // all. It is a background element with no affordance of its own, and a
-        // feature nobody discovers may as well not have been built.
-        const intro = born < 6000 ? (1 - born / 6000) : 0;
+        // feature nobody discovers may as well not have been built. Skipped
+        // under reduced motion, where `born` advances in mouse-sized jumps and
+        // the breath would read as a flicker rather than a pulse.
+        const intro = (!snap && born < 6000) ? (1 - born / 6000) : 0;
         const breathe = intro * (0.5 + 0.5 * Math.sin(born / 620));
 
         const cx = box.x + box.w / 2;
