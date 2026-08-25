@@ -544,6 +544,25 @@ as you want. It offers two kinds:
 The first homescreen is seeded from whatever folder the dock already used, so an
 existing setup keeps working and simply gains a name.
 
+### Searching settings
+
+There are eight tabs, which is enough that "which tab is the blur slider on" is
+a real question. The box above the tabs searches **all of them at once** —
+filtering only the tab you are already looking at would help just once you had
+found the right tab, which is the hard part.
+
+Each result says where it came from, as **Tab › Group**, and the tab name is a
+link: click it to leave the search and land on that tab. The controls in the
+results are the real ones, not copies, so you can change a setting without
+going anywhere. <kbd>Esc</kbd> clears the search; a second <kbd>Esc</kbd>
+closes the drawer.
+
+It matches rendered text rather than a list of setting names, which has two
+consequences worth knowing. Partial words work — `brig` finds Brightness. And
+the text *inside* a control counts, so searching `fahrenheit` finds Units even
+though the row is called Temperature. Searching a tab's own name — `weather`,
+`music` — hands back that whole tab.
+
 ### Moving the settings panel
 
 Drag it by its header. It remembers where you put it, and is clamped so it can't
@@ -574,6 +593,11 @@ rather than relying on CSS). Two things deliberately keep moving — the audio
 visualizer, because motion *is* what that widget is, and a live video
 wallpaper, because you chose it and pointed it at a file. Both have their own
 off switches.
+
+An **interactive background** stops too: Particles paints one still frame and
+then holds it. The light switch is treated differently, because it is a control
+rather than decoration — it still repaints so that hovering and clicking it
+visibly do something, but it snaps between states instead of easing.
 
 **Keyboard.** The dock is a single Tab stop with arrow-key navigation inside
 it, which is the standard toolbar pattern:

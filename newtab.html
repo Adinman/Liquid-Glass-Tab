@@ -75,6 +75,14 @@
       <h2>Settings</h2>
       <button id="settings-close" class="icon-btn" title="Close">✕</button>
     </header>
+    <!-- Outside #settings-body on purpose: draw() empties the body on every
+         keystroke, so an input living in there would be destroyed mid-word and
+         take the caret with it. -->
+    <div id="settings-search">
+      <input id="settings-search-input" type="text" spellcheck="false" autocomplete="off"
+             placeholder="Search settings…" aria-label="Search settings">
+      <button id="settings-search-clear" class="icon-btn" title="Clear search" hidden>✕</button>
+    </div>
     <nav id="settings-tabs"></nav>
     <div id="settings-body"></div>
   </aside>

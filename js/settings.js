@@ -18,6 +18,7 @@ import { refreshScene, startGame } from './fx.js';
 
 let rebuild = () => {};
 let activeTab = 'look';
+let query = '';               // the settings search; '' means the normal tabbed view
 
 const TABS = {
   look: 'Look',
@@ -852,18 +853,108 @@ function folderPicker() {
   return wrap;
 }
 
+/* ---------- search ----------
+   Eight tabs is enough that "which tab is the blur slider on" is a real
+   question, so the search deliberately spans all of them rather than filtering
+   the one you happen to be looking at — filtering the visible tab would only
+   help once you had already found the right tab, which is the hard part.
+
+   It matches against rendered text rather than a hand-written index of setting
+   names. An index would be faster and would drift the first time somebody adds
+   a row without remembering to list it; PANELS is the only description of what
+   a tab contains, so the search reads that. It also means the text of a
+   control counts: "fahrenheit" finds Units, because the option is in the DOM.
+
+   The cost is that every panel is built to be searched, and a few of them have
+   side effects — folderPicker reads the bookmark tree, the visualiser lists
+   audible tabs, Spotify checks for a stored token. All are local calls, and the
+   input is debounced, so a burst of typing builds once rather than per key. */
+const norm = s => s.toLowerCase().replace(/\s+/g, ' ').trim();
+
+/** Which tab a group came from, as a heading that jumps back to it. */
+function crumb(tabId, tabLabel, title) {
+  return el('h3', {}, el('button', {
+    class: 'set-crumb', type: 'button', title: `Go to ${tabLabel}`,
+    onclick: () => { activeTab = tabId; resetSearch(); },
+  },
+    el('span', { class: 'crumb-tab', text: tabLabel }),
+    el('span', { class: 'crumb-sep', text: '›' }),
+    el('span', { text: title }),
+  ));
+}
+
+/** Every tab, built and then cut down to the rows that match. */
+function searchResults(q) {
+  const needle = norm(q);
+  const out = [];
+
+  for (const [tabId, tabLabel] of Object.entries(TABS)) {
+    let groups;
+    // One broken panel must not take the whole search down with it — the same
+    // reasoning as the per-widget try/catch in app.js.
+    try { groups = PANELS[tabId](); }
+    catch (e) { console.error('[cgt] settings search', tabId, e); continue; }
+
+    for (const g of groups) {
+      if (!(g instanceof HTMLElement)) continue;          // panels may hold falsy entries
+      const title = g.querySelector(':scope > h3')?.textContent || '';
+      // A group whose own name matches keeps everything in it. Searching
+      // "backup" should show the whole Backup group, not the one button inside
+      // it whose label happens to repeat the word.
+      //
+      // The tab name counts too, and that is not cosmetic: without it
+      // "weather" returned the Privacy group alone, because the rows that
+      // actually configure the weather are called Location and Units and none
+      // of them says the word. Searching for the name on the tab should hand
+      // back the tab.
+      const whole = norm(tabLabel).includes(needle) || norm(title).includes(needle);
+      const keep = [...g.children].filter(c =>
+        c.tagName !== 'H3' && (whole || norm(c.textContent).includes(needle)));
+      if (!keep.length) continue;
+      // Appending moves the nodes out of `g`, which is then discarded. They are
+      // the live controls with their listeners already attached, so the results
+      // are not copies — editing one here is editing the real setting.
+      out.push(el('div', { class: 'set-group' }, crumb(tabId, tabLabel, title), ...keep));
+    }
+  }
+
+  if (!out.length) {
+    out.push(el('div', { class: 'hint', style: { lineHeight: 1.6 } },
+      `Nothing matches “${q}”.`));
+  }
+  return out;
+}
+
+function resetSearch() {
+  const input = $('#settings-search-input');
+  if (input) input.value = '';
+  query = '';
+  syncClear();
+  draw();
+}
+
+function syncClear() {
+  const btn = $('#settings-search-clear');
+  if (btn) btn.hidden = !query;
+}
+
 /* ---------- shell ---------- */
 function draw() {
   const tabs = $('#settings-tabs'), body = $('#settings-body');
+  // The tab strip is meaningless while a search spans all of them, and leaving
+  // one pill lit would suggest the results came from that tab alone.
+  tabs.hidden = !!query;
   tabs.innerHTML = '';
-  for (const [id, label] of Object.entries(TABS)) {
-    tabs.append(el('button', {
-      class: activeTab === id ? 'on' : '', text: label,
-      onclick: () => { activeTab = id; draw(); },
-    }));
+  if (!query) {
+    for (const [id, label] of Object.entries(TABS)) {
+      tabs.append(el('button', {
+        class: activeTab === id ? 'on' : '', text: label,
+        onclick: () => { activeTab = id; draw(); },
+      }));
+    }
   }
   body.innerHTML = '';
-  body.append(...PANELS[activeTab]());
+  body.append(...(query ? searchResults(query) : PANELS[activeTab]()));
 }
 
 /** Drag the panel by its header. Switches from the default right/bottom
@@ -985,12 +1076,29 @@ export function initSettings(onRebuild) {
   const panel = $('#settings');
   initSettingsDrag(panel);
   $('#settings-close').addEventListener('click', () => { panel.hidden = true; });
+
+  const search = $('#settings-search-input');
+  const clear = $('#settings-search-clear');
+  // Debounced, because a keystroke rebuilds all eight panels to search them.
+  // Short enough to feel immediate, long enough that typing a word is one pass.
+  const run = debounce(() => { query = search.value.trim(); syncClear(); draw(); }, 120);
+  search?.addEventListener('input', run);
+  clear?.addEventListener('click', () => { resetSearch(); search?.focus(); });
+
   window.addEventListener('lgt:settings', () => {
     panel.hidden = !panel.hidden;
-    if (!panel.hidden) draw();
+    // Reopening starts clean rather than resuming a filter set minutes ago,
+    // which would look like a drawer with most of its settings missing.
+    // resetSearch draws, so there is no second draw here.
+    if (!panel.hidden) resetSearch();
   });
+
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape' && !panel.hidden) panel.hidden = true;
+    if (e.key !== 'Escape' || panel.hidden) return;
+    // A search in progress owns Escape first: clearing the filter is nearly
+    // always what was meant, and the drawer is one more press away.
+    if (query || search?.value) { resetSearch(); return; }
+    panel.hidden = true;
   });
 }
 
