@@ -65,28 +65,59 @@ export function bundled(list, value) {
   return list.find(b => b.id === id) || null;
 }
 
-/* Interactive backgrounds: names and descriptions only.
+/* The arcade: names, descriptions and how each game is scored.
 
-   The implementations live in js/fx/ and are imported the first time one is
-   switched on, so the settings drawer cannot import them — listing a scene in
-   the picker would drag all of them onto every new tab, which is exactly the
-   cost the lazy import exists to avoid. Hence the split: this table is the
-   single source of the user-facing strings, and the modules hold only the id,
-   the ambient flag and the code.
+   The implementations live in js/games/ and are imported the first time one is
+   started, so the settings drawer cannot import them — listing a game in the
+   picker would drag all of them onto every new tab, which is exactly the cost
+   the lazy import exists to avoid. Hence the split: this table is the single
+   source of the user-facing strings, and the modules hold only the id, the
+   preview and the code.
 
-   `package.py` checks these ids against the registry, so a scene added here
-   and forgotten in js/fx/index.js fails the build rather than shipping a
-   picker entry that does nothing. */
-export const FX_SCENES = [
-  { id: 'particles', name: 'Particles',
-    blurb: 'Gathers around the cursor. Hold the mouse down to push it away.' },
-  { id: 'lightswitch', name: 'Light switch',
-    blurb: 'Drag it anywhere. Click it to brighten the wallpaper and the glass.' },
-];
+   The games are named by number rather than by what they are. Each one is a
+   version of a game somebody else invented, and shipping "Minesweeper" and
+   "Pong" as feature names in a store listing invites a complaint that is not
+   worth having. The blurb says what it plays like without borrowing the name.
 
-export const FX_GAMES = [
-  { id: 'pong', name: 'Pong',
-    blurb: 'Endless rally against the computer. It gets faster the longer you last.' },
+   `lowerIsBetter` exists because Game 1 scores a time. Without it, a single
+   `>` in the score code would refuse to record any win after the first.
+
+   `package.py` checks these ids against the registry, so a game added here and
+   forgotten in js/games/index.js fails the build rather than shipping a picker
+   entry that does nothing. */
+export const ARCADE = [
+  { id: 'game1', name: 'Game 1',
+    blurb: 'Clear the grid without hitting a mine. Right-click to flag one.',
+    score: 'Best time', lowerIsBetter: true, unit: 's',
+    // Records are kept per level, because a time on a 9x9 with 10 mines and a
+    // time on a 30x16 with 99 are not the same achievement and there is only
+    // one number per key. The three sizes are the ones this genre settled on
+    // decades ago; inventing our own would make every published time
+    // incomparable for no gain.
+    levels: [
+      { id: 'easy', name: 'Easy', cols: 9, rows: 9, mines: 10 },
+      { id: 'medium', name: 'Medium', cols: 16, rows: 16, mines: 40 },
+      { id: 'hard', name: 'Hard', cols: 30, rows: 16, mines: 99 },
+    ] },
+  { id: 'game2', name: 'Game 2',
+    blurb: 'Steer with the arrow keys, eat, and try not to bite yourself.',
+    score: 'Best score',
+    // Map size, not speed — so these are named for what they are rather than
+    // borrowing Game 1's easy/medium/hard, and they run smallest to largest the
+    // way a size list should. A smaller board is harder, but saying "Hard" for
+    // it put the list in descending order of size, which reads backwards.
+    //
+    // Each keeps its own record: a small board caps how long you can survive,
+    // so one number across all three would mean something different depending
+    // on which board it was set on.
+    levels: [
+      { id: 'small', name: 'Small', cols: 16, rows: 11 },
+      { id: 'medium', name: 'Medium', cols: 24, rows: 16 },
+      { id: 'large', name: 'Large', cols: 32, rows: 20 },
+    ] },
+  { id: 'game3', name: 'Game 3',
+    blurb: 'Endless rally against the computer, on the arrow keys. It speeds up.',
+    score: 'Best rally' },
 ];
 
 export const ENGINES = {
@@ -280,7 +311,12 @@ export const DEFAULTS = {
   fontScale: 100,
 
   // dock
-  dockEdge: 'bottom',
+  // Interface language. 'auto' follows the browser; anything else is an id in
+  // js/locales/index.js. An unknown value falls back to English rather than to
+  // a blank interface — see js/i18n.js.
+  language: 'auto',
+
+  dockEdge: 'bottom',      // bottom | top | left | right
   dockSize: 56,
   dockMagnify: 1.55,
   dockLabels: true,
@@ -340,23 +376,14 @@ export const DEFAULTS = {
   countdownDate: '',          // custom mode only, YYYY-MM-DD
   coins: 'bitcoin,ethereum,solana',
 
-  // The light switch's own state and where it sits, as percentages of the
-   // viewport so it lands in the same place on any monitor. Both belong to the
-   // scene rather than to the theme: turning the scene off leaves the lights
-   // where they were, and turning it back on picks them up again.
-  fxLights: false,
-  fxSwitch: { x: 50, y: 72 },
-  // How far the lights lift the wallpaper, as a percentage. The glass takes a
-  // fraction of this rather than the whole of it — matching them makes the
-  // panels look washed out well before the wallpaper looks bright.
-  fxLightLift: 114,
-
-  // Interactive background. '' is none; anything else is an id in
-  // js/fx/index.js SCENES. An unknown id resolves to nothing rather than
-  // throwing, so removing a scene in a later version cannot brick a tab.
-  fxScene: '',
-  // Pong's all-time record.
-  pongBest: 0,
+  // Arcade records, keyed by the ids in ARCADE above — or `id.level` for a game
+  // that has levels. Absent or 0 means "never played". One map rather than a key
+  // per game so adding a fourth is a line in ARCADE and nothing else.
+  arcadeBest: {},
+  // The level each game is set to, keyed by game id. Two games have levels now,
+  // so this is a map rather than the single string it started as. Anything
+  // missing or unknown falls back to that game's middle level.
+  arcadeLevels: {},
 
   // homescreens. Widgets are shared across all of them by design; only the
   // dock's bookmark folder changes. Seeded on first run from dockFolder.

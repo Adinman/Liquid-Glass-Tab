@@ -8,7 +8,8 @@ import { initPalette } from './palette.js';
 import { initSpaces, renderSpaces } from './spaces.js';
 import { initSettings } from './settings.js';
 import { REGISTRY } from './widgets/index.js';
-import { initFX, refreshScene } from './fx.js';
+import { initArcade } from './arcade.js';
+import { initI18n, onLocaleChange, translateDOM } from './i18n.js';
 
 const stage = () => $('#stage');
 const teardown = new Map();   // widget id -> cleanup fn
@@ -199,12 +200,16 @@ export function rebuildWidgets() {
  *  rebuild. */
 function layoutBounds(w, h, placed = false) {
   const reserve = S.dockAutohide ? 14 : (S.dockSize || 56) + 42;
-  const dockTop = !placed && S.dockEdge === 'top' && !S.dockAutohide;
-  const dockBottom = !placed && S.dockEdge === 'bottom' && !S.dockAutohide;
-  const minY = dockTop ? reserve : 12;
-  const bottom = innerHeight - (dockBottom ? reserve : 12);
+  // Which edge to keep clear of, or null when there is nothing to avoid — an
+  // auto-hidden dock is not on screen, and a hand-placed widget is where the
+  // user put it.
+  const edge = (placed || S.dockAutohide) ? null : S.dockEdge;
+  const minX = edge === 'left' ? reserve : 8;
+  const right = innerWidth - (edge === 'right' ? reserve : 8);
+  const minY = edge === 'top' ? reserve : 12;
+  const bottom = innerHeight - (edge === 'bottom' ? reserve : 12);
   return {
-    minX: 8, maxX: Math.max(8, innerWidth - w - 8),
+    minX, maxX: Math.max(minX, right - w),
     minY, maxY: Math.max(minY, bottom - h),
   };
 }
@@ -407,6 +412,18 @@ function relayout() {
   //
   // The drag handler still writes percentages while dragging and reads them
   // back on drop, so the stored intent is unaffected by this.
+  // Keep clear of a dock along the left or right edge.
+  //
+  // The anchoring pass above reserves space vertically only — it grew up around
+  // a dock that was always along the bottom, and `dockLine` is the whole of its
+  // notion of "the dock is in the way". Reworking that to be edge-aware is a
+  // much larger change than it is worth, so the horizontal result is clamped
+  // here instead. Bottom and top docks are untouched: their reserve is already
+  // in `dockLine`.
+  const sideDock = !S.dockAutohide && (S.dockEdge === 'left' || S.dockEdge === 'right');
+  const minLeft = sideDock && S.dockEdge === 'left' ? reserve : 8;
+  const maxRight = innerWidth - (sideDock && S.dockEdge === 'right' ? reserve : 8);
+
   for (const it of items) {
     if (it.dragging) continue;
     // Divided by the panel's own zoom. `left`/`top` are resolved in the
@@ -421,7 +438,10 @@ function relayout() {
     const z = widgetSize(S.widgets[it.id] || {}) / 100 * fitScale;
     const div = z > 0 ? z : 1;
     if (!it.centred) {
-      const lp = Math.round(it.left / div) + 'px';
+      // Clamped in real pixels, before the zoom conversion below.
+      const w = it.w0 * fitScale;
+      const x = clamp(it.left, minLeft, Math.max(minLeft, maxRight - w));
+      const lp = Math.round(x / div) + 'px';
       if (it.el.style.left !== lp) it.el.style.left = lp;
     }
     const tp = Math.round(it.top / div) + 'px';
@@ -630,7 +650,6 @@ function initEvents() {
       applyTheme();
       applyDockSettings();
       renderSpaces();
-      refreshScene();
       if (S.activeSpace !== before) renderDock();
     });
   });
@@ -639,14 +658,16 @@ function initEvents() {
 /* ---------------- go ---------------- */
 (async function main() {
   await loadSettings();
+  // Before anything renders. `t` is synchronous, so the catalogue has to be in
+  // memory by the time the first label is built — otherwise the page paints in
+  // English and then flips, which is the same class of flash early.js exists to
+  // remove.
+  await initI18n();
   initTheme();
   initEvents();
   initKeys();
   initPalette();
-  initFX();
-  // Not awaited: it dynamically imports the scene registry, and a new tab has
-  // no business waiting on that to paint.
-  refreshScene();
+  initArcade();
   initSettings(rebuildWidgets);
   rebuildWidgets();
   await initSpaces();
@@ -661,7 +682,18 @@ function initEvents() {
   for (const delay of [400, 1500, 4000]) setTimeout(keepInView, delay);
 
   onChange(keys => {
-    if (keys.includes('*')) { rebuildWidgets(); refreshScene(); }
+    if (keys.includes('*')) rebuildWidgets();
+  });
+
+  // Changing language rebuilds every surface that holds a translated string.
+  // The same set the cross-tab settings listener refreshes, for the same
+  // reason: these are built once from strings, not bound to them.
+  onLocaleChange(() => {
+    translateDOM();
+    rebuildWidgets();
+    applyDockSettings();
+    renderDock();
+    renderSpaces();
   });
 
   // First run: open settings so the user can point weather at their city.

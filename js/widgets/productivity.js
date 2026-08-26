@@ -1,12 +1,13 @@
 // Notes, to-do list, and a pomodoro focus timer.
 import { el, store, debounce, pad2, toast } from '../util.js';
 import { head } from './core.js';
+import { t } from '../i18n.js';
 
 /* ============================ NOTES ============================ */
 export const notes = {
   id: 'notes', title: 'Notes', className: 'w-notes',
   render(panel) {
-    const ta = el('textarea', { placeholder: 'Scratch space… saved as you type.', spellcheck: 'true' });
+    const ta = el('textarea', { placeholder: t('Scratch space… saved as you type.'), spellcheck: 'true' });
     const saved = el('span', { class: 'faint', style: { fontSize: '10px' } });
     panel.append(head('Notes', saved), ta);
 
@@ -29,7 +30,7 @@ export const notes = {
 export const tasks = {
   id: 'tasks', title: 'Tasks', className: 'w-tasks',
   render(panel) {
-    const input = el('input', { class: 'task-add', placeholder: 'Add a task, press Enter' });
+    const input = el('input', { class: 'task-add', placeholder: t('Add a task, press Enter') });
     const list = el('div');
     const count = el('span', { class: 'faint', style: { fontSize: '10px' } });
     panel.append(head('To-do', count), input, list);
@@ -45,7 +46,7 @@ export const tasks = {
         list.append(el('div', { class: 'task' + (t.done ? ' done' : '') },
           el('div', { class: 'box', text: t.done ? '✓' : '', onclick: () => { t.done = !t.done; persist(); draw(); } }),
           el('div', { class: 'txt', text: t.text }),
-          el('button', { class: 'del icon-btn', text: '✕', title: 'Delete',
+          el('button', { class: 'del icon-btn', text: '✕', title: t('Delete'),
             onclick: () => { items = items.filter(x => x !== t); persist(); draw(); } })));
       }
     }
@@ -75,7 +76,7 @@ export const pomodoro = {
     const LEN = { focus: 25 * 60, short: 5 * 60, long: 15 * 60 };
     let mode = 'focus', left = LEN.focus, running = false, done = 0, timer = null;
 
-    const mLabel = el('div', { class: 'pomo-mode', text: 'Focus' });
+    const mLabel = el('div', { class: 'pomo-mode', text: t('Focus') });
     const time = el('div', { class: 'lbl tabular' });
     const R = 62, C = 2 * Math.PI * R;
     const fg = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
@@ -89,8 +90,8 @@ export const pomodoro = {
     fg.style.strokeDasharray = C;
 
     const ring = el('div', { class: 'pomo-ring' }, svg, time);
-    const startBtn = el('button', { class: 'btn primary', text: 'Start' });
-    const resetBtn = el('button', { class: 'btn', text: 'Reset' });
+    const startBtn = el('button', { class: 'btn primary', text: t('Start') });
+    const resetBtn = el('button', { class: 'btn', text: t('Reset') });
     const modes = el('div', { class: 'chips', style: { justifyContent: 'center', marginBottom: '8px' } },
       ...[['focus', 'Focus 25'], ['short', 'Break 5'], ['long', 'Long 15']].map(([m, label]) =>
         el('button', { class: 'pill', dataset: { m }, text: label, onclick: () => switchTo(m) })));
@@ -102,7 +103,7 @@ export const pomodoro = {
     function draw() {
       time.textContent = `${Math.floor(left / 60)}:${pad2(left % 60)}`;
       fg.style.strokeDashoffset = C * (1 - left / LEN[mode]);
-      mLabel.textContent = { focus: 'Focus', short: 'Short break', long: 'Long break' }[mode];
+      mLabel.textContent = t({ focus: 'Focus', short: 'Short break', long: 'Long break' }[mode]);
       startBtn.textContent = running ? 'Pause' : 'Start';
       stat.textContent = done ? `${done} session${done > 1 ? 's' : ''} completed today` : '';
       [...modes.children].forEach(b => b.classList.toggle('on', b.dataset.m === mode));

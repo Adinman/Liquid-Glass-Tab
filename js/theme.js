@@ -5,7 +5,7 @@ import { setIconMode } from './icons.js';
 import { getBlob, WALLPAPER_IMAGE_KEY, WALLPAPER_VIDEO_KEY } from './media.js';
 import { WALLPAPERS, PHOTOS, CLIPS, BG_PREFIX,
          bundled, photoFile, clipFile, bgThumb, clipPoster } from './config.js';
-import { S } from './state.js';
+import { S, set } from './state.js';
 
 /* ---------- refraction map ----------
    `assets/refract-map.png`: an RGB image where red encodes horizontal sampling
@@ -183,13 +183,6 @@ function rememberWallpaper() {
     // Both decide whether #wp-mesh is drawn at all — see paintCachedWallpaper.
     wp: document.documentElement.dataset.wp,
     mesh: parseFloat(document.documentElement.style.getPropertyValue('--mesh-op')),
-    // The light switch brightens the wallpaper via a CSS filter keyed off
-    // data-lights. Without it here, early.js paints the wallpaper unlit and
-    // applyTheme brightens it once the modules load — a visible pop on every
-    // single new tab, which is the exact class of bug early.js was added to
-    // remove. `lift` rides along for the same reason.
-    lights: S.fxLights ? 1 : 0,
-    lift: Math.max(1, (Number(S.fxLightLift) || 114) / 100),
   };
   const clip = bundled(CLIPS, S.wallpaperVideo || '');
   const photo = bundled(PHOTOS, S.wallpaperCustom || '');
@@ -237,17 +230,7 @@ export function applyTheme() {
 
   st.setProperty('--blur', S.blur + 'px');
   st.setProperty('--sat', S.saturation + '%');
-  // The light switch lifts the glass a little without touching the stored
-  // brightness, so switching the lights off returns to exactly what the slider
-  // says rather than to whatever it was nudged to.
-  // The light switch lifts the glass a little without touching the stored
-  // brightness, so switching the lights off returns to exactly what the slider
-  // says rather than to whatever it was nudged to.
-  const lift = Math.max(1, (Number(S.fxLightLift) || 114) / 100);
-  st.setProperty('--wp-lift', lift.toFixed(3));
-  st.setProperty('--bri',
-    (S.brightness * (S.fxLights ? 1 + (lift - 1) * 0.62 : 1)).toFixed(1) + '%');
-  document.documentElement.dataset.lights = S.fxLights ? 'on' : 'off';
+  st.setProperty('--bri', S.brightness + '%');
   st.setProperty('--tint-a', (S.tintAlpha / 100).toFixed(3));
   st.setProperty('--edge-a', (S.edgeAlpha / 100).toFixed(3));
   st.setProperty('--radius', S.radius + 'px');
@@ -452,7 +435,29 @@ export async function applyVideoWallpaper() {
     // used to jump the live wallpaper back to the beginning.
     if (!objectURL) {
       const blob = await getBlob(WALLPAPER_VIDEO_KEY);
-      if (!blob) { v.hidden = true; return; }
+      if (!blob) {
+        // The file is gone — evicted under storage pressure, or a write that
+        // never completed. Leaving the setting on 'local' parks the page with
+        // no way out: paintStill keeps taking its video branch, so an uploaded
+        // still image stays hidden behind a video that does not exist, the dim
+        // comes from the video slider, and the only control that clears any of
+        // it is a Remove button for a file that is already gone. Clearing the
+        // setting is the honest outcome — there is no video.
+        v.hidden = true;
+        v.classList.remove('ready');
+        clearLocalPoster();
+        await set({ wallpaperVideo: '', wallpaperVideoName: '' });
+        // Repaint the still layer directly rather than calling applyTheme,
+        // which would re-enter this function.
+        paintStill($('#wp-image'));
+        document.documentElement.dataset.wp = S.wallpaperCustom ? 'custom' : 'preset';
+        // applyWallpaper does not await this function, so it already cached the
+        // old state a few lines after calling it. Without re-recording, the
+        // next new tab paints from an entry that still claims a live wallpaper
+        // and flashes before correcting itself.
+        rememberWallpaper();
+        return;
+      }
       objectURL = URL.createObjectURL(blob);
     }
     src = objectURL;

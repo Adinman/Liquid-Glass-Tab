@@ -2,6 +2,7 @@
 import { el, cachedFetch, relTime, toast, escapeHtml, hostOf } from '../util.js';
 import { S, set } from '../state.js';
 import { head } from './core.js';
+import { t } from '../i18n.js';
 
 /* ---------- WMO weather codes ---------- */
 const WMO = {
@@ -23,7 +24,10 @@ const WMO = {
 };
 const wmo = (code, day = true) => {
   const e = WMO[code] || ['—', '🌡️', '🌡️'];
-  return { desc: e[0], icon: day ? e[1] : e[2] };
+  // Translated here rather than in the table above: that table is module-level
+  // and evaluates before any catalogue is loaded, so translating it in place
+  // would freeze whichever language happened to be active at import time.
+  return { desc: t(e[0]), icon: day ? e[1] : e[2] };
 };
 
 /** Best-effort city guess from IP. Only called when no place is set. */
@@ -72,7 +76,7 @@ export const weather = {
   id: 'weather', title: 'Weather', className: 'w-weather',
   render(panel) {
     const body = el('div');
-    const refresh = el('button', { class: 'icon-btn', text: '⟳', title: 'Refresh',
+    const refresh = el('button', { class: 'icon-btn', text: '⟳', title: t('Refresh'),
       onclick: () => load(true) });
     panel.append(head('Weather', refresh), body);
     let timer;
@@ -164,7 +168,7 @@ export const weather = {
       body.append(days);
 
       if (stale) body.append(el('div', { class: 'faint', style: { fontSize: '11px', marginTop: '8px' },
-        text: 'Showing cached data — refresh failed.' }));
+        text: t('Showing cached data — refresh failed.') }));
     }
 
     load();
@@ -202,7 +206,7 @@ export const news = {
   render(panel) {
     const tabs = el('div', { class: 'src-tabs' });
     const list = el('div', { class: 'news-list scroll' });
-    const refresh = el('button', { class: 'icon-btn', text: '⟳', title: 'Refresh', onclick: () => load(true) });
+    const refresh = el('button', { class: 'icon-btn', text: '⟳', title: t('Refresh'), onclick: () => load(true) });
     panel.append(head('News', refresh), tabs, list);
 
     let all = [], filter = 'all', timer;

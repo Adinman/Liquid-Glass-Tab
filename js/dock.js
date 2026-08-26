@@ -1,10 +1,30 @@
 // The bookmark hotbar: a liquid-glass dock with macOS-style magnification,
 // folder flyouts, and drag-to-reorder that writes back to real bookmarks.
-import { $, el, hostOf, toast, clamp, openIncognito } from './util.js';
+import { $, el, hostOf, toast, clamp, debounce, openIncognito } from './util.js';
 import { iconElement } from './icons.js';
 import { activeFolder } from './spaces.js';
 import { S } from './state.js';
 import { attachSheen } from './theme.js';
+
+/* ---------- orientation ----------
+   The dock can sit on any of the four edges. Everything below that used to
+   assume "a horizontal row along the bottom" is written against a main axis
+   and an outward direction instead, so left and right are the same code with
+   the axes swapped rather than a second implementation.
+
+   `main` is the axis the icons are laid out along; `out` points away from the
+   edge the dock is docked to, which is the direction a lifting or bouncing
+   icon travels. */
+const EDGES = {
+  bottom: { vertical: false, outX: 0, outY: -1 },
+  top:    { vertical: false, outX: 0, outY: 1 },
+  left:   { vertical: true,  outX: 1, outY: 0 },
+  right:  { vertical: true,  outX: -1, outY: 0 },
+};
+
+const edgeOf = () => EDGES[S.dockEdge] ? S.dockEdge : 'bottom';
+const geom = () => EDGES[edgeOf()];
+const isVertical = () => geom().vertical;
 
 const zone = () => $('#dock-zone');
 const dock = () => $('#dock');
@@ -17,10 +37,16 @@ let dragId = null;
 
 export async function initDock() {
   await renderDock();
-  chrome.bookmarks.onCreated.addListener(renderDock);
-  chrome.bookmarks.onRemoved.addListener(renderDock);
-  chrome.bookmarks.onChanged.addListener(renderDock);
-  chrome.bookmarks.onMoved.addListener(renderDock);
+  // Coalesced rather than wired straight to renderDock. Each of these fires
+  // once per bookmark, and a bulk import fires hundreds in a row — every one
+  // of which would otherwise re-read the whole folder and rebuild every icon
+  // in the dock. One rebuild after the last change is the same result for a
+  // fraction of the work, and a frame's delay on a single add is invisible.
+  const scheduleRender = debounce(() => { renderDock(); }, 60);
+  chrome.bookmarks.onCreated.addListener(scheduleRender);
+  chrome.bookmarks.onRemoved.addListener(scheduleRender);
+  chrome.bookmarks.onChanged.addListener(scheduleRender);
+  chrome.bookmarks.onMoved.addListener(scheduleRender);
 
   // On the dock, not the item row: the row stops at the padding, so a cursor
   // approaching from the side would not arm anything until it was already
@@ -66,7 +92,11 @@ export async function initDock() {
 }
 
 export function applyDockSettings() {
-  zone().dataset.edge = S.dockEdge === 'top' ? 'top' : 'bottom';
+  const edge = edgeOf();
+  zone().dataset.edge = edge;
+  // Also on the root, for rules that cannot reach the dock from where they are
+  // — the toast lifts clear of a bottom dock and must not for the other three.
+  document.documentElement.dataset.dockEdge = edge;
   zone().dataset.hidden = S.dockAutohide ? 'true' : 'false';
   document.documentElement.dataset.dockHover = S.dockHover || 'magnify';
   // Sizes and spacing feed the cached base centres, so re-measure on change.
@@ -223,7 +253,10 @@ function onDockKeydown(e) {
     document.activeElement.click();
     return;
   }
-  const step = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
+  // Both axes, whichever way the dock is turned. Accepting all four rather
+  // than only the pair that matches the current edge costs nothing and means
+  // the keys never stop working because the dock moved.
+  const step = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: 1, ArrowUp: -1 }[e.key];
   if (step !== undefined) { e.preventDefault(); focusDockItem(items, i + step); return; }
   if (e.key === 'Home') { e.preventDefault(); focusDockItem(items, 0); }
   else if (e.key === 'End') { e.preventDefault(); focusDockItem(items, items.length - 1); }
@@ -270,9 +303,9 @@ const EFFECTS = {
 };
 
 const anim = {
-  raf: 0, pointerX: null, base: [], st: [], last: 0, hovered: -1, dirty: true,
+  raf: 0, pointerMain: null, base: [], st: [], last: 0, hovered: -1, dirty: true,
   items: [],      // cached element list; the loop must not re-query per frame
-  order: [],      // indices sorted left-to-right, for the O(n) spread pass
+  order: [],      // indices in screen order along the main axis
   buf: null,      // reused per-frame scratch, so the loop allocates nothing
   pad: -1,        // last paddingInline written
   childCount: -1, // row child count when the cache was built
@@ -283,14 +316,16 @@ const dockItemEls = () => [...itemsEl().querySelectorAll('.dock-item')];
 /** Cache untransformed centres so the loop never reads layout it just wrote. */
 function measureBase() {
   const items = dockItemEls();
+  const vert = isVertical();
   for (const it of items) it.style.transform = '';
-  dock().style.paddingInline = '';
-  anim.pad = -1;
+  clearPad();
   anim.items = items;
   anim.childCount = itemsEl().children.length;
+  // The centre along whichever axis the dock runs. Everything downstream —
+  // proximity, ordering, the spread pass — is one-dimensional in this number.
   anim.base = items.map(it => {
     const r = it.getBoundingClientRect();
-    return r.left + r.width / 2;
+    return vert ? r.top + r.height / 2 : r.left + r.width / 2;
   });
   anim.st = items.map((_, i) => anim.st[i] || { prox: 0, at: -1, amp: 0 });
   anim.st.length = items.length;
@@ -314,10 +349,18 @@ function startAnim() {
   if (!anim.raf) { anim.last = performance.now(); anim.raf = requestAnimationFrame(tick); }
 }
 
+/** The dock grows along its own axis to keep magnified icons inside the glass,
+ *  so which padding that is depends on the edge. Both are cleared, because the
+ *  edge may have changed since the last write. */
+function clearPad() {
+  dock().style.paddingInline = '';
+  dock().style.paddingBlock = '';
+  anim.pad = -1;
+}
+
 function resetItems() {
   for (const it of dockItemEls()) it.style.transform = '';
-  dock().style.paddingInline = '';
-  anim.pad = -1;
+  clearPad();
   if (anim.buf) anim.buf.last.fill('');
 }
 
@@ -360,7 +403,9 @@ function tick(now) {
   const fit = parseFloat(document.documentElement.style.getPropertyValue('--fit')) || 1;
   const size = (S.dockSize || 56) * fit;
   const maxScale = S.dockMagnify || 1.55;
-  const px = anim.pointerX;
+  const px = anim.pointerMain;
+  const vert = isVertical();
+  const edge = geom();
 
   // Which item is the cursor over? Drives one-shot waves.
   let nearest = -1, nearestD = Infinity;
@@ -445,20 +490,26 @@ function tick(now) {
       }
     } else if (eff.kind === 'prox') {
       s = 1 + (maxScale - 1) * st.prox;
-      if (mode === 'lift') { s = 1 + eff.grow * st.prox; y = -eff.rise * st.prox; }
+      if (mode === 'lift') { s = 1 + eff.grow * st.prox; y = eff.rise * st.prox; }
     } else {
       s = 1 + (maxScale - 1) * 0.22 * st.prox;       // gentle follow under the wave
       const p = st.at < 0 ? 1 : (now - st.at) / eff.dur;
       if (p >= 0 && p < 1) {
         busy = true;
         const a = st.amp;
-        if (mode === 'bounce') y = -envBounce(p) * size * 0.34 * a;
+        if (mode === 'bounce') y = envBounce(p) * size * 0.34 * a;
         else if (mode === 'wiggle') r = envWiggle(p) * 14 * a;
-        else if (mode === 'jelly') { const e = envJelly(p) * 0.24 * a; kx = 1 + e; ky = 1 - e; }
+        else if (mode === 'jelly') {
+          // Squash along the dock's own axis and stretch across it, so the
+          // wobble reads the same way whichever edge the dock is on.
+          const e = envJelly(p) * 0.24 * a;
+          if (vert) { ky = 1 + e; kx = 1 - e; } else { kx = 1 + e; ky = 1 - e; }
+        }
       } else if (st.at >= 0 && p >= 1) {
         st.at = -1; st.amp = 0;
       }
     }
+    // `y` is now distance along `out` — away from the edge — not screen Y.
     sx[i] = s * kx; sy[i] = s * ky; ty[i] = y; rot[i] = r;
   }
 
@@ -488,23 +539,38 @@ function tick(now) {
 
   // Writing a transform that is already set still costs a style invalidation,
   // and at rest most of the row is unchanged frame to frame.
+  // Two contributions, on axes that depend on the edge: the spread runs along
+  // the dock, and the lift/bounce runs outward from it. On a bottom dock those
+  // are X and -Y, which is what this used to hardcode.
+  const { outX, outY } = edge;
   for (let i = 0; i < n; i++) {
-    const t = `translate(${tx[i].toFixed(2)}px, ${ty[i].toFixed(2)}px) ` +
+    const dx = (vert ? 0 : tx[i]) + outX * ty[i];
+    const dy = (vert ? tx[i] : 0) + outY * ty[i];
+    const t = `translate(${dx.toFixed(2)}px, ${dy.toFixed(2)}px) ` +
               `rotate(${rot[i].toFixed(2)}deg) scale(${sx[i].toFixed(3)}, ${sy[i].toFixed(3)})`;
     if (t !== last[i]) { items[i].style.transform = t; last[i] = t; }
   }
   // Grow the glass panel symmetrically so magnified icons stay inside it.
   // Padding is symmetric and the dock is centred, so item centres don't move.
-  // This one drives layout, so it is worth not repeating either.
+  // This one drives layout, so it is worth not repeating either — and it has to
+  // grow along the dock's own axis, which is the block axis when it is vertical.
   const pad = +(12 + maxShift).toFixed(1);
-  if (pad !== anim.pad) { dock().style.paddingInline = pad + 'px'; anim.pad = pad; }
+  if (pad !== anim.pad) {
+    dock().style[vert ? 'paddingBlock' : 'paddingInline'] = pad + 'px';
+    anim.pad = pad;
+  }
 
   if (busy || px != null) anim.raf = requestAnimationFrame(tick);
   else { resetItems(); anim.hovered = -1; }
 }
 
-function onDockPointerMove(e) { anim.pointerX = e.clientX; startAnim(); }
-function onDockPointerLeave() { anim.pointerX = null; startAnim(); }
+function onDockPointerMove(e) {
+  // The coordinate along the dock's own axis; the other one is irrelevant to
+  // proximity, which is what makes the whole loop one-dimensional.
+  anim.pointerMain = isVertical() ? e.clientY : e.clientX;
+  startAnim();
+}
+function onDockPointerLeave() { anim.pointerMain = null; startAnim(); }
 
 /* ---------- folder flyout ---------- */
 async function openFlyout(node, anchor) {
@@ -530,16 +596,41 @@ async function openFlyout(node, anchor) {
 export function closeFlyout() { flyout().hidden = true; }
 export function closePopover() { popover().hidden = true; }
 
-/** Shared placement for the flyout and the add/edit popover. */
+/** Shared placement for the flyout and the add/edit popover.
+ *
+ *  Everything is written in pixels relative to the zone rather than with a
+ *  `calc(100% + 10px)` offset. The percentage worked only because a horizontal
+ *  zone is exactly as tall as the dock; a vertical zone spans the whole
+ *  viewport, so 100% of it is most of the screen and the panel landed nowhere
+ *  near the icon it belongs to. */
 function positionNear(node, anchor) {
   const zr = zone().getBoundingClientRect();
+  const dr = dock().getBoundingClientRect();
   const a = anchor.getBoundingClientRect();
+
+  // Cleared first: the edge may have changed since this node was last placed,
+  // and a stale `bottom` fights a fresh `top`.
+  node.style.left = node.style.right = node.style.top = node.style.bottom = 'auto';
   node.style.left = '0px';
+  node.style.top = '0px';
   const w = node.offsetWidth;
-  node.style.left = clamp(a.left + a.width / 2 - w / 2 - zr.left, 12,
-    Math.max(12, zr.width - w - 12)) + 'px';
-  if (S.dockEdge === 'top') { node.style.bottom = 'auto'; node.style.top = 'calc(100% + 10px)'; }
-  else { node.style.top = 'auto'; node.style.bottom = 'calc(100% + 10px)'; }
+  const h = node.offsetHeight;
+  const GAP = 10;
+
+  if (isVertical()) {
+    // Centred on the icon along the dock, and just clear of the dock across it.
+    node.style.top = clamp(a.top + a.height / 2 - h / 2 - zr.top, 12,
+      Math.max(12, zr.height - h - 12)) + 'px';
+    node.style.left = (S.dockEdge === 'left'
+      ? dr.right - zr.left + GAP
+      : dr.left - zr.left - w - GAP) + 'px';
+  } else {
+    node.style.left = clamp(a.left + a.width / 2 - w / 2 - zr.left, 12,
+      Math.max(12, zr.width - w - 12)) + 'px';
+    node.style.top = (S.dockEdge === 'top'
+      ? dr.bottom - zr.top + GAP
+      : dr.top - zr.top - h - GAP) + 'px';
+  }
 }
 
 /** Bookmarks can be bookmarklets. Navigating this page — which runs at the
@@ -578,6 +669,113 @@ export async function addBookmark(rawUrl, title) {
     toast('Could not add that bookmark: ' + e.message);
     return false;
   }
+}
+
+/* ---------- bulk import ----------
+   One import, two ways in: a bookmarks file exported from a browser, or a
+   pasted list of links. Both end up as the same {url, title} array so there is
+   only one piece of code that actually creates anything. */
+
+/** A ceiling on one import. A browser export can hold tens of thousands of
+ *  links, and a dock folder with that many in it stops being a dock and starts
+ *  being a reason every render is slow. Anything over this is reported rather
+ *  than silently dropped. */
+export const IMPORT_CAP = 2000;
+
+/** Pull the links out of a Netscape bookmark file — the format Chrome, Firefox,
+ *  Safari and Edge all export, and the only thing anyone means by "my
+ *  bookmarks file".
+ *
+ *  Parsed with DOMParser rather than a regex, because the format is loose in
+ *  practice — unclosed <DT>, stray <p>, attributes in any order — which is
+ *  exactly the case an HTML parser handles and a pattern does not. DOMParser
+ *  does not run scripts, and the parsed document is never attached to this one:
+ *  only `href` and `textContent` are read out of it, so nothing from a file
+ *  somebody downloaded reaches the page as markup.
+ *
+ *  The folder structure is deliberately flattened. The dock is a row of icons,
+ *  and rebuilding a nested tree inside it would produce a dock made mostly of
+ *  folders. Chrome's own bookmark manager already imports these files with the
+ *  hierarchy intact, for anyone who wants that instead. */
+export function parseBookmarksFile(html) {
+  const doc = new DOMParser().parseFromString(String(html), 'text/html');
+  const out = [];
+  for (const a of doc.querySelectorAll('a[href]')) {
+    // normalizeURL rejects anything that is not http(s), which is what drops
+    // the bookmarklets, `place:` queries and chrome:// entries these files are
+    // usually full of.
+    const url = normalizeURL(a.getAttribute('href'));
+    if (!url) continue;
+    out.push({ url, title: (a.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 300) });
+  }
+  return out;
+}
+
+/** One link per line. Bare hosts are fine — normalizeURL adds the scheme, the
+ *  same as typing one into the add-bookmark box. Returns the valid entries and
+ *  a count of the lines that were not links, so the caller can say so rather
+ *  than quietly importing four of someone's six lines. */
+export function parseLinkList(text) {
+  const entries = [];
+  let invalid = 0;
+  for (const line of String(text).split(/\r?\n/)) {
+    const raw = line.trim();
+    if (!raw) continue;
+    const url = normalizeURL(raw);
+    if (url) entries.push({ url, title: '' });
+    else invalid++;
+  }
+  return { entries, invalid };
+}
+
+/** Create many bookmarks in whichever folder feeds the dock.
+ *
+ *  Sequential, not Promise.all: a few hundred parallel creates gain nothing —
+ *  the API applies them in order anyway — while making it impossible to say
+ *  which one failed. The loop yields periodically so the page keeps painting;
+ *  without that an import of a thousand links freezes the tab for the whole
+ *  run, which looks exactly like a crash.
+ *
+ *  Returns what happened rather than toasting, so the caller can report it in
+ *  its own words. */
+export async function importBookmarks(entries, onProgress) {
+  const parentId = activeFolder();
+  const existing = await readFolder(parentId);
+  // Deduped against what is already in the folder, and against the rest of the
+  // file. Importing the same export twice is the obvious thing for somebody to
+  // try, and doubling every icon is a poor answer to it.
+  const seen = new Set(existing.map(n => n.url).filter(Boolean));
+
+  const queue = [];
+  let skipped = 0;
+  for (const e of entries) {
+    if (!e?.url) continue;
+    if (seen.has(e.url)) { skipped++; continue; }
+    seen.add(e.url);
+    queue.push(e);
+  }
+
+  const overflow = Math.max(0, queue.length - IMPORT_CAP);
+  const batch = queue.slice(0, IMPORT_CAP);
+  let added = 0, failed = 0;
+
+  for (let i = 0; i < batch.length; i++) {
+    const { url, title } = batch[i];
+    try {
+      await chrome.bookmarks.create({ parentId, title: title || hostOf(url), url });
+      added++;
+    } catch {
+      // One rejected link must not abandon the rest of the import.
+      failed++;
+    }
+    if ((i & 31) === 31) {
+      onProgress?.(i + 1, batch.length);
+      await new Promise(r => setTimeout(r, 0));
+    }
+  }
+
+  await renderDock();
+  return { added, skipped, overflow, failed, shown: nodes.length };
 }
 
 /**

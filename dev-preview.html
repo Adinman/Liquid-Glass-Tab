@@ -25,10 +25,10 @@
       <span class="blob b1"></span><span class="blob b2"></span>
       <span class="blob b3"></span><span class="blob b4"></span>
     </div>
-    <!-- Interactive backgrounds. Above the blobs so it is not blurred by them,
-         below the grain and vignette so those still sit over it. Driven by
-         js/fx.js; stays hidden and untouched when no scene is on. -->
-    <canvas id="wp-fx" hidden></canvas>
+    <!-- The arcade. Above the blobs so it is not blurred by them, below the
+         grain and vignette so those still sit over it. Driven by js/arcade.js;
+         stays hidden and costs nothing when no game is running. -->
+    <canvas id="wp-arcade" hidden></canvas>
     <div id="wp-grain"></div>
     <div id="wp-vignette"></div>
   </div>
@@ -44,13 +44,14 @@
     </defs>
   </svg>
 
-  <div id="spaces" class="glass" role="tablist" aria-label="Homescreens"></div>
+  <div id="spaces" class="glass" role="tablist" aria-label="Homescreens" data-i18n-label="Homescreens"></div>
   <div id="spaces-popover" class="glass" hidden></div>
 
   <main id="stage"></main>
 
   <div id="dock-zone" data-edge="bottom">
-    <div id="dock" class="glass"><div id="dock-items"></div></div>
+    <div id="dock" class="glass" role="toolbar" aria-label="Bookmarks"
+         data-i18n-label="Bookmarks"><div id="dock-items"></div></div>
     <div id="dock-flyout" class="glass" hidden></div>
     <div id="dock-popover" class="glass" hidden></div>
     <div id="dock-hot" aria-hidden="true"></div>
@@ -65,11 +66,13 @@
   </div>
 
   <aside id="settings" class="glass" hidden>
-    <header><h2>Settings</h2><button id="settings-close" class="icon-btn">✕</button></header>
+    <header><h2 data-i18n="Settings">Settings</h2><button id="settings-close" class="icon-btn" title="Close" data-i18n-title="Close">✕</button></header>
     <div id="settings-search">
       <input id="settings-search-input" type="text" spellcheck="false" autocomplete="off"
-             placeholder="Search settings…" aria-label="Search settings">
-      <button id="settings-search-clear" class="icon-btn" title="Clear search" hidden>✕</button>
+             placeholder="Search settings…" aria-label="Search settings"
+             data-i18n-placeholder="Search settings…" data-i18n-label="Search settings">
+      <button id="settings-search-clear" class="icon-btn" title="Clear search"
+              data-i18n-title="Clear search" hidden>✕</button>
     </div>
     <nav id="settings-tabs"></nav>
     <div id="settings-body"></div>

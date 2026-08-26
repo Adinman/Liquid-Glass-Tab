@@ -4,8 +4,14 @@ import { el, $, pad2, clamp, hostOf, toast, debounce,
 import { iconElement } from '../icons.js';
 import { ENGINES, QUOTES, HOLIDAYS } from '../config.js';
 import { S, set } from '../state.js';
+import { t } from '../i18n.js';
 
+/** A widget's header row. The title is translated here rather than at each of
+ *  the dozen call sites — head() runs at render time, so this is the one place
+ *  that is both late enough to have a catalogue and early enough to catch every
+ *  widget. */
 export function head(title, ...actions) {
+  title = t(title);
   return el('header', {}, el('span', { text: title }), el('span', { class: 'grow' }), ...actions);
 }
 const tick = (fn, ms) => { fn(); const id = setInterval(fn, ms); return () => clearInterval(id); };
@@ -66,8 +72,8 @@ export const clock = {
       }
 
       const hr = now.getHours();
-      const part = hr < 5 ? 'Good night' : hr < 12 ? 'Good morning'
-                 : hr < 17 ? 'Good afternoon' : hr < 22 ? 'Good evening' : 'Good night';
+      const part = t(hr < 5 ? 'Good night' : hr < 12 ? 'Good morning'
+                 : hr < 17 ? 'Good afternoon' : hr < 22 ? 'Good evening' : 'Good night');
       const line = S.userName ? `${part}, ${S.userName}.` : part + '.';
       if (line !== lastGreet) {
         lastGreet = line;
@@ -88,7 +94,7 @@ export const search = {
     const input = el('input', { type: 'text', spellcheck: 'false', autocomplete: 'off',
       placeholder: `Search ${ENGINES[S.searchEngine]?.name || 'the web'} or enter an address` });
     const engine = el('button', { class: 'pill engine', type: 'button',
-      text: ENGINES[S.searchEngine]?.name || 'Google', title: 'Change search engine' });
+      text: ENGINES[S.searchEngine]?.name || 'Google', title: t('Change search engine') });
 
     // Private-window toggle. Deliberately a latching control rather than a
     // hidden modifier, because "am I about to search privately?" has to be
@@ -215,7 +221,7 @@ export const quote = {
     const draw = () => { q.textContent = '“' + QUOTES[i][0] + '”'; a.textContent = '— ' + QUOTES[i][1]; };
     draw();
     panel.append(head('Quote', el('button', {
-      class: 'icon-btn', title: 'Another', text: '⟳',
+      class: 'icon-btn', title: t('Another'), text: '⟳',
       onclick: () => { i = (i + 1) % QUOTES.length; draw(); },
     })), q, a);
     return () => {};
@@ -320,7 +326,7 @@ export const countdown = {
 
     function draw() {
       const t = countdownTarget();
-      if (!t) { num.textContent = '—'; lbl.textContent = 'Pick a date'; return; }
+      if (!t) { num.textContent = '—'; lbl.textContent = t('Pick a date'); return; }
       const diff = t.date - Date.now();
       if (diff <= 0) { num.textContent = '🎉'; lbl.textContent = `${t.name} — it’s here`; return; }
       const d = Math.floor(diff / 864e5), h = Math.floor(diff / 36e5) % 24, m = Math.floor(diff / 6e4) % 60;
@@ -396,7 +402,7 @@ export const battery = {
       const secs = bat.charging ? bat.chargingTime : bat.dischargingTime;
       const time = Number.isFinite(secs) && secs > 0
         ? ` · ${Math.floor(secs / 3600)}h ${pad2(Math.floor(secs / 60) % 60)}m ${bat.charging ? 'to full' : 'left'}` : '';
-      meta.textContent = (bat.charging ? 'Charging' : 'On battery') + time;
+      meta.textContent = t(bat.charging ? 'Charging' : 'On battery') + time;
     };
 
     // BatteryManager is a persistent singleton, so these listeners outlive the
@@ -416,7 +422,7 @@ export const battery = {
       }).catch(() => {});
     } else {
       pct.textContent = '—';
-      meta.textContent = 'This device does not report battery status.';
+      meta.textContent = t('This device does not report battery status.');
     }
     return () => { dead = true; detach(); };
   },

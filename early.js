@@ -65,14 +65,6 @@
     if (v.scheme === 'light' || v.scheme === 'dark') {
       root.dataset.scheme = v.scheme;
     }
-    // See rememberWallpaper: without this the wallpaper paints unlit and then
-    // brightens once the modules have loaded.
-    if (v.lights === 1) {
-      root.dataset.lights = 'on';
-      if (typeof v.lift === 'number' && v.lift >= 1 && v.lift <= 2) {
-        root.style.setProperty('--wp-lift', v.lift.toFixed(3));
-      }
-    }
   } catch (e) {
     /* Never let this break the page. Worst case is the flash it was added to
        remove, which is what happened before it existed. */

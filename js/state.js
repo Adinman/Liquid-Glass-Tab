@@ -1,5 +1,6 @@
 // Settings state: load, patch, persist, notify.
-import { DEFAULTS, ENGINES, WIDGET_SIZE, PHOTOS, CLIPS, bundled } from './config.js';
+import { DEFAULTS, ENGINES, WIDGET_SIZE, PHOTOS, CLIPS, ARCADE, bundled } from './config.js';
+import { LOCALES } from './locales/index.js';
 import { store } from './util.js';
 import { putBlob, WALLPAPER_IMAGE_KEY } from './media.js';
 
@@ -72,6 +73,9 @@ export async function loadSettings() {
   // 'city' was the wrong end of the privacy scale — it kept the most
   // identifying part. Anyone on it wanted less detail, not more.
   if (S.weatherPrivacy === 'city') S.weatherPrivacy = 'country';
+  // Before dropRemovedKeys, which is what deletes pongBest.
+  migratePongBest(saved);
+  migrateGame2Levels(saved);
   await dropRemovedKeys();
   await migrateWallpaperImage();
   return S;
@@ -85,7 +89,50 @@ async function dropRemovedKeys() {
   let changed = false;
   if ('vtApiKey' in S) { delete S.vtApiKey; changed = true; }
   if (S.widgets && 'virustotal' in S.widgets) { delete S.widgets.virustotal; changed = true; }
+  // The interactive backgrounds are gone. Their settings would otherwise sit in
+  // storage forever and turn up in every settings export.
+  for (const k of ['fxScene', 'fxLights', 'fxSwitch', 'fxLightLift', 'pongBest',
+                   'arcadeLevel']) {
+    if (k in S) { delete S[k]; changed = true; }
+  }
   if (changed) await flushNow();
+}
+
+/** Pong became Game 3, and its record moved into the arcade map. Somebody's
+ *  all-time rally is the one thing that version had worth keeping, so it is
+ *  carried across rather than dropped on the floor. Runs once — afterwards
+ *  `pongBest` is gone and this is a no-op. */
+function migratePongBest(saved) {
+  const old = Number(saved?.pongBest);
+  if (!Number.isFinite(old) || old <= 0) return;
+  if (S.arcadeBest?.game3) return;              // already carried, or beaten since
+  S.arcadeBest = { ...(S.arcadeBest || {}), game3: Math.min(1e6, old) };
+}
+
+/** Game 2's levels were briefly named after Game 1's — easy/medium/hard, which
+ *  put the list in descending order of map size. They are small/medium/large
+ *  now, and the two ends swap: the old "easy" was the biggest board and the old
+ *  "hard" the smallest. Renaming the keys rather than letting sanitize drop
+ *  them keeps anyone's records from evaporating over a rename.
+ *
+ *  Safe to delete once no stored settings can still carry the old ids. */
+function migrateGame2Levels(saved) {
+  const src = saved?.arcadeBest;
+  if (!src || typeof src !== 'object') return;
+  const moved = { 'game2.easy': 'game2.large', 'game2.hard': 'game2.small' };
+  const out = { ...(S.arcadeBest || {}) };
+  let changed = false;
+  for (const [from, to] of Object.entries(moved)) {
+    const v = Number(src[from]);
+    if (!Number.isFinite(v) || v <= 0 || out[to]) continue;   // never overwrite a real one
+    out[to] = Math.min(1e6, v);
+    changed = true;
+  }
+  if (changed) S.arcadeBest = out;
+  // The stored level itself may also name a retired id.
+  const lvl = saved?.arcadeLevels?.game2;
+  const swap = { easy: 'large', hard: 'small' }[lvl];
+  if (swap) S.arcadeLevels = { ...(S.arcadeLevels || {}), game2: swap };
 }
 
 /** Uploaded wallpapers used to live in the settings object as base64 data
@@ -121,6 +168,58 @@ export function setWidget(id, patch) {
   const written = persistSoon();
   emit(['widgets']);
   return written;
+}
+
+/* ---------------- arcade scores ----------------
+   One place, because the rule is easy to get wrong in three different ways.
+
+   Read live, never snapshotted at the start of a game. A copy taken then goes
+   stale and there is nothing to correct it, so a tab that opened a game while
+   the record was 0 still believed that after another tab had set it to 30 — and
+   a run of 1 beat its own stale copy and wrote 1 over the real record.
+
+   Direction matters too: Game 1 scores a time, where lower is better, and the
+   other two count upward. A single `>` would quietly refuse to record any
+   Minesweeper win after the first. */
+export const bestScore = id => {
+  const n = Number(S.arcadeBest?.[id]);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+};
+
+/** Record a run. Returns true when it was a new record. */
+export function recordScore(id, value, lowerIsBetter = false) {
+  const v = Number(value);
+  if (!Number.isFinite(v) || v <= 0) return false;
+  const prev = bestScore(id);
+  const better = prev === 0 || (lowerIsBetter ? v < prev : v > prev);
+  if (!better) return false;
+  // A fresh object rather than a mutation: `set` shallow-assigns, so patching
+  // the existing one in place would leave S and the patch pointing at the same
+  // object and defeat the change comparison other tabs do.
+  set({ arcadeBest: { ...(S.arcadeBest || {}), [id]: v } });
+  return true;
+}
+
+/** The level a game is set to, resolved live and always a real level. Games
+ *  call this rather than reading S themselves, so "unknown id falls back to the
+ *  middle one" is written once. */
+export function levelFor(gameId) {
+  const g = ARCADE.find(x => x.id === gameId);
+  if (!g?.levels?.length) return null;
+  const want = S.arcadeLevels?.[gameId];
+  return g.levels.find(l => l.id === want)
+    || g.levels[Math.floor(g.levels.length / 2)];
+}
+
+/** Store a game's level. A fresh object rather than a mutation, for the same
+ *  reason recordScore builds one — `set` shallow-assigns, so patching in place
+ *  would leave S and the patch pointing at the same object and defeat the
+ *  change comparison other tabs do. */
+export function setLevel(gameId, levelId) {
+  const g = ARCADE.find(x => x.id === gameId);
+  if (!g?.levels?.some(l => l.id === levelId)) return false;
+  set({ arcadeLevels: { ...(S.arcadeLevels || {}), [gameId]: levelId } });
+  return true;
 }
 
 export function onChange(fn) { listeners.add(fn); return () => listeners.delete(fn); }
@@ -171,7 +270,13 @@ const inRange = (v, min, max, fallback) => {
   return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
 };
 
-const isHttpURL = u => {
+/** Exported so the settings fields can test a pasted URL with the exact rule
+ *  that decides whether it survives being stored. They used to disagree: the
+ *  Video URL box accepted anything at all and the Image URL box accepted a
+ *  scheme-less `example.com/clip.jpg`, and then this wiped both on the next
+ *  load — so a typo looked accepted, showed nothing, and vanished on reload.
+ *  One rule, used in both places, cannot drift apart again. */
+export const isHttpURL = u => {
   try { return /^https?:$/.test(new URL(String(u)).protocol); } catch { return false; }
 };
 
@@ -225,6 +330,13 @@ function sanitize(s) {
   // settings file, and renaming an engine key in a future version while a
   // stored value still points at the old name — the same shape as the
   // dockHover and weatherPrivacy migrations above.
+  // The language id reaches a dynamic import path, so it is checked against the
+  // registry rather than trusted — an imported settings file must not be able
+  // to name a module.
+  if (s.language !== 'auto' && !LOCALES.some(l => l.id === s.language)) {
+    s.language = 'auto';
+  }
+
   if (!ENGINES[s.searchEngine]) s.searchEngine = DEFAULTS.searchEngine;
   // '' is meaningful here: it means "use whichever engine is normally selected".
   if (s.searchIncognitoEngine && !ENGINES[s.searchIncognitoEngine]) s.searchIncognitoEngine = '';
@@ -240,28 +352,39 @@ function sanitize(s) {
     s.widgetScaleMode = DEFAULTS.widgetScaleMode;
   }
 
-  // The interactive background id is looked up in a plain object literal, and
-  // every one of those inherits Object.prototype — so 'constructor',
-  // '__proto__' and 'toString' are all truthy lookups that are not scenes.
-  // js/fx.js guards with Object.hasOwn as well; this keeps the junk out of
-  // storage in the first place. Unknown-but-plausible ids are left alone: a
-  // scene removed in a future version should resolve to nothing, not be
-  // silently rewritten to something else.
-  if (typeof s.fxScene !== 'string' || !/^[a-z][a-z0-9]{0,23}$/.test(s.fxScene)) {
-    s.fxScene = '';
-  }
-  s.pongBest = inRange(s.pongBest, 0, 1e6, 0);
-  s.fxLights = !!s.fxLights;
-  s.fxLightLift = inRange(s.fxLightLift, 100, 140, DEFAULTS.fxLightLift);
-  // The switch position is a percentage of the viewport and is clamped rather
-  // than dropped: an out-of-range one would park the switch off-screen, and
-  // unlike a widget there is nothing to drag it back with.
+  // Arcade records. Only ids that are actually in ARCADE survive — the map is
+  // read with a bare lookup all over the settings drawer, and an imported
+  // settings file is untrusted input, so '__proto__' and friends have no
+  // business being in there. Values are clamped to something a real run could
+  // produce rather than merely to "a number".
   {
-    const sw = s.fxSwitch;
-    s.fxSwitch = {
-      x: inRange(sw && sw.x, 0, 100, DEFAULTS.fxSwitch.x),
-      y: inRange(sw && sw.y, 0, 100, DEFAULTS.fxSwitch.y),
-    };
+    const src = (s.arcadeBest && typeof s.arcadeBest === 'object'
+      && !Array.isArray(s.arcadeBest)) ? s.arcadeBest : {};
+    const out = {};
+    for (const g of ARCADE) {
+      // A game with levels keeps one record per level under `id.level`, and
+      // never a bare `id` — so the set of legal keys stays closed and an
+      // imported file cannot invent one.
+      const keys = g.levels ? g.levels.map(l => `${g.id}.${l.id}`) : [g.id];
+      for (const k of keys) {
+        const n = inRange(src[k], 0, 1e6, 0);
+        if (n > 0) out[k] = n;
+      }
+    }
+    s.arcadeBest = out;
+  }
+  {
+    // Only games that have levels, and only levels they actually have. The map
+    // is read with a bare lookup, and an imported settings file is untrusted.
+    const src = (s.arcadeLevels && typeof s.arcadeLevels === 'object'
+      && !Array.isArray(s.arcadeLevels)) ? s.arcadeLevels : {};
+    const out = {};
+    for (const g of ARCADE) {
+      if (!g.levels?.length) continue;
+      const want = src[g.id];
+      if (g.levels.some(l => l.id === want)) out[g.id] = want;
+    }
+    s.arcadeLevels = out;
   }
   // The settings panel position reaches inline left/top/height. A ratio outside
   // 0..1, or a negative height, would park the panel off-screen with no way to
@@ -312,6 +435,15 @@ export async function importSettings(json) {
   const keep = Object.fromEntries(SECRET_KEYS.map(k => [k, S[k]]));
   S = sanitize({ ...structuredClone(DEFAULTS), ...incoming, ...keep });
   S.widgets = { ...structuredClone(DEFAULTS.widgets), ...S.widgets };
+  // The same two passes loadSettings runs, and for the same reason: a settings
+  // file is a backup, so the one being imported is very often older than the
+  // build importing it. Without these, importing a file written before the
+  // arcade existed carried a Pong record that nothing would ever read again and
+  // re-seeded every removed fx key into storage, where they would then turn up
+  // in the next export and be passed on to whoever got that file.
+  migratePongBest(incoming);
+  migrateGame2Levels(incoming);
+  await dropRemovedKeys();
   await migrateWallpaperImage();
   await flushNow();
   emit(['*']);

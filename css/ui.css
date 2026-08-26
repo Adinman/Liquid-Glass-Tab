@@ -355,16 +355,26 @@ select.dp-field option { background: #1a1d28; color: #fff; }
 /* Search. Sits between the header and the tab strip, and both it and the tabs
    stay out of #settings-body — the body is emptied and rebuilt on every
    keystroke, which would destroy the input being typed into. */
-#settings-search { display: flex; align-items: center; gap: 6px; padding: 0 20px 10px; }
+#settings-search { display: flex; align-items: center; gap: 6px; padding: 0 20px 8px; }
 #settings-search input {
   flex: 1; min-width: 0; user-select: text;
   background: hsl(0 0% 100% / .10); border: 1px solid hsl(0 0% 100% / .10);
-  border-radius: 10px; padding: 7px 10px; outline: 0; font-size: 12.5px;
+  border-radius: 9px; padding: 4px 9px; outline: 0; font-size: 12px;
   transition: background .18s, border-color .18s;
 }
 #settings-search input::placeholder { color: var(--text-faint); }
 #settings-search input:focus { background: hsl(0 0% 100% / .14); border-color: hsl(0 0% 100% / .24); }
-#settings-search .icon-btn { flex: 0 0 auto; width: 26px; height: 26px; border-radius: 8px; font-size: 11px; }
+#settings-search .icon-btn { flex: 0 0 auto; width: 23px; height: 23px; border-radius: 7px; font-size: 10px; }
+
+/* The bulk-import paste box. Full width rather than the 168px a .set-row field
+   gets: this holds a list of URLs, and wrapping every one of them across three
+   lines makes it impossible to see what you pasted. */
+.bulk-paste {
+  display: block; width: 100%; max-width: 100%; margin-top: 4px;
+  resize: vertical; min-height: 62px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 11.5px; line-height: 1.5; user-select: text;
+}
 
 /* A search result's heading: which tab the setting lives in, then the group it
    sits in. The tab half is a button — finding a setting and then having to
@@ -411,31 +421,49 @@ select.dp-field option { background: #1a1d28; color: #fff; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .wp-swatches { display: grid; grid-template-columns: repeat(5, 1fr); gap: 7px; }
 
-/* Interactive-background picker.
-   Cards rather than the 64px swatches above: a scene has no thumbnail worth
-   showing at that size, and what distinguishes them is what they do, so the
-   description has to be readable rather than a tooltip. */
-.fx-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.fx-card {
-  position: relative;
-  display: flex; flex-direction: column; gap: 3px;
-  padding: 10px 11px 11px; text-align: left;
+/* The arcade picker.
+   Cards with a drawn still of each game. The games are named by number, so the
+   picture is the only thing on a card that says which one it is — a name and a
+   blurb alone would mean reading all three every time. */
+.ar-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+.ar-card {
+  position: relative; display: flex; flex-direction: column; gap: 3px;
+  padding: 0 0 10px; text-align: left; overflow: hidden;
   border-radius: 13px;
   border: 1px solid hsl(0 0% 100% / .12);
   background: hsl(0 0% 100% / .06);
   color: inherit; font: inherit; cursor: pointer;
-  transition: background .16s ease, border-color .16s ease;
+  transition: background .16s ease, border-color .16s ease, transform .16s ease;
 }
-.fx-card:hover { background: hsl(0 0% 100% / .12); border-color: hsl(0 0% 100% / .22); }
-.fx-card.on { border-color: var(--accent); background: hsl(0 0% 100% / .14); }
-.fx-name { font-size: 13px; font-weight: 500; }
-.fx-blurb { font-size: 11px; color: var(--text-faint); line-height: 1.4; }
-.fx-on {
-  position: absolute; top: 8px; right: 9px;
-  font-size: 9px; letter-spacing: .1em; font-weight: 600;
-  padding: 2px 5px; border-radius: 5px;
-  background: var(--accent); color: #06121c;
+.ar-card:hover { background: hsl(0 0% 100% / .12); border-color: hsl(0 0% 100% / .26); }
+.ar-card:active { transform: scale(.985); }
+/* Fixed height, and a block: the canvas is sized from clientWidth/Height in JS,
+   so it needs a real box before the preview is drawn into it. */
+.ar-shot {
+  display: block; width: 100%; height: 74px; margin-bottom: 7px;
+  border-bottom: 1px solid hsl(0 0% 100% / .09);
+  background: hsl(228 30% 8% / .5);
 }
+.ar-name { font-size: 13px; font-weight: 500; padding: 0 11px; }
+.ar-blurb { font-size: 11px; color: var(--text-faint); line-height: 1.4; padding: 0 11px; }
+.ar-best {
+  font-size: 10px; letter-spacing: .04em; padding: 0 11px;
+  color: var(--accent); margin-top: 2px;
+}
+
+/* Every level's record at once, under the difficulty picker. The card can only
+   show the selected one, and a record you cannot see is a record you forget you
+   set — which is most of the reason to keep three of them. */
+.ar-levels { display: flex; gap: 6px; margin-top: 2px; }
+.ar-level {
+  flex: 1; display: flex; flex-direction: column; gap: 1px;
+  padding: 6px 8px; border-radius: 9px;
+  background: hsl(0 0% 100% / .05); border: 1px solid transparent;
+}
+.ar-level.on { border-color: hsl(0 0% 100% / .2); background: hsl(0 0% 100% / .09); }
+.ar-level-name { font-size: 10px; color: var(--text-faint); letter-spacing: .04em; }
+.ar-level-best { font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.ar-level.on .ar-level-best { color: var(--accent); }
 
 /* Group-level hints. .hint was only ever styled inside .set-row, so the ones
    written straight into a group rendered at body size. */

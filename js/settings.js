@@ -2,19 +2,23 @@
 import { $, el, toast, dropCache, debounce, clamp } from './util.js';
 import { WALLPAPERS, ENGINES, WIDGET_META, DEFAULTS, HOLIDAYS,
          WIDGET_SIZE, PHOTOS, CLIPS, BG_PREFIX, bgThumb,
-         FX_SCENES, FX_GAMES } from './config.js';
+         ARCADE } from './config.js';
 import { countdownTarget } from './widgets/core.js';
-import { S, set, setWidget, resetAll, exportSettings, importSettings } from './state.js';
+import { S, set, setWidget, resetAll, exportSettings, importSettings,
+         isHttpURL, bestScore, levelFor } from './state.js';
 import { applyTheme, applyVideoWallpaper, cssImageURL,
          invalidateLocalImage, invalidateLocalVideo, clearLocalPoster } from './theme.js';
-import { putBlob, delBlob, storageEstimate, fmtBytes,
+import { putBlob, getBlob, delBlob, storageEstimate, fmtBytes,
          WALLPAPER_IMAGE_KEY, WALLPAPER_VIDEO_KEY } from './media.js';
 import { audio } from './audio.js';
 import { activeFolder, activeSpace, spaceList } from './spaces.js';
-import { applyDockSettings, renderDock } from './dock.js';
+import { applyDockSettings, renderDock, importBookmarks,
+         parseBookmarksFile, parseLinkList, IMPORT_CAP } from './dock.js';
 import { searchPlaces, detectPlace } from './widgets/index.js';
 import * as sp from './spotify.js';
-import { refreshScene, startGame } from './fx.js';
+import { play, drawPreview } from './arcade.js';
+import { t, changeLocale, wanted } from './i18n.js';
+import { LOCALES } from './locales/index.js';
 
 let rebuild = () => {};
 let activeTab = 'look';
@@ -25,6 +29,7 @@ const TABS = {
   glass: 'Glass',
   dock: 'Dock',
   widgets: 'Widgets',
+  arcade: 'Arcade',
   weather: 'Weather',
   news: 'News',
   music: 'Music',
@@ -128,58 +133,106 @@ function openTab(url) {
   else window.open(url, '_blank', 'noopener');
 }
 
-/** Scene picker and game launcher. */
-function fxGroup() {
-  const pick = async id => {
-    // Clicking the active one turns it off, matching the wallpaper swatches
-    // above — otherwise a scene could only ever be swapped, never removed.
-    await set({ fxScene: S.fxScene === id ? '' : id });
-    refreshScene();
-    draw();
-  };
+/** A locale id as the language's own name, for the 'auto' row. */
+const nameOf = id => (LOCALES.find(l => l.id === id) || LOCALES[0]).name;
 
-  const play = async () => {
-    // The drawer covers a third of the screen and the game needs all of it.
+/* ---------- arcade ----------
+   Each card shows a still of the game rather than only its name. The games are
+   called Game 1/2/3 on purpose — see ARCADE in js/config.js — so without a
+   picture there is nothing on the card that tells you which is which, and a
+   blurb alone makes you read three of them to find the one you wanted.
+
+   The previews come from the game modules themselves, so they cannot drift
+   away from what the game actually looks like. They are drawn on demand, which
+   is also the first thing that loads js/games/ at all — a new tab that never
+   opens this panel never pays for any of it. */
+function arcadeGroup() {
+  const launch = async id => {
+    // The drawer covers a third of the screen and a game needs all of it.
     $('#settings').hidden = true;
-    if (!await startGame('pong')) toast('Could not start the game');
+    if (!await play(id)) toast(t('Could not start that game'));
   };
 
-  const card = (entry, on, onclick) => el('button', {
-    class: ['fx-card', on ? 'on' : ''].filter(Boolean).join(' '),
-    type: 'button', onclick,
-  },
-    el('span', { class: 'fx-name', text: entry.name }),
-    el('span', { class: 'fx-blurb', text: entry.blurb }),
-    on && el('span', { class: 'fx-on', text: 'ON' }),
-  );
+  const card = entry => {
+    const shot = el('canvas', { class: 'ar-shot', 'aria-hidden': 'true' });
+    // Straight away, with no wait for layout. drawPreview uses a fixed backing
+    // size for exactly this reason — see the note there — so the canvas does
+    // not need to be in the tree yet, and the only asynchrony left is the
+    // registry import.
+    drawPreview(entry.id, shot);
 
-  return group('Interactive background',
-    el('div', { class: 'fx-grid' },
-      ...FX_SCENES.map(s => card(s, S.fxScene === s.id, () => pick(s.id))),
-      ...FX_GAMES.map(g => card(g, false, play)),
-    ),
-    // Only while the switch is actually on screen — a reset button for
-    // something you cannot see is just clutter. It exists at all because a
-    // widget sitting on top of the switch owns the click, and there is then no
-    // way to grab the switch underneath to drag it out.
-    S.fxScene === 'lightswitch' && row('Light switch',
-      el('button', { class: 'btn', text: 'Reset position', onclick: async () => {
-        await set({ fxSwitch: { ...DEFAULTS.fxSwitch } });
-        toast('Switch moved back to the middle');
-      } })),
-    S.fxScene === 'lightswitch' && row('Brightness when on',
-      slider('fxLightLift', 100, 140, 2, applyTheme)),
-    S.pongBest > 0 && row('Best rally', el('span', {
-      class: 'faint tabular', style: { fontSize: '12px' },
-      text: String(S.pongBest),
-    })),
+    // A game with levels files its record per level, so the card shows the
+    // record for the level that is actually selected — showing a bare `game1`
+    // best would be a key nothing ever writes.
+    const key = entry.levels ? `${entry.id}.${levelFor(entry.id).id}` : entry.id;
+    const best = bestScore(key);
+    return el('button', {
+      class: 'ar-card', type: 'button', onclick: () => launch(entry.id),
+      title: `Play ${entry.name}`,
+    },
+      shot,
+      el('span', { class: 'ar-name', text: t(entry.name) }),
+      el('span', { class: 'ar-blurb', text: t(entry.blurb) }),
+      el('span', { class: 'ar-best', text: best
+        ? `${t(entry.score)} ${best}${entry.unit || ''}`
+        : t('No record yet') }),
+    );
+  };
+
+  const levelled = ARCADE.filter(g => g.levels);
+
+  return group(t('Arcade'),
+    el('div', { class: 'ar-grid' }, ...ARCADE.map(card)),
+    // Records only — no control. Difficulty is picked inside the game, on a
+    // panel beside the board, because it is something you change between
+    // rounds: leaving the game to open a settings tab to restart the thing you
+    // are looking at is the wrong shape for it. This is here so the two levels
+    // you are not playing still have their records somewhere visible.
+    ...levelled.map(g => el('div', { class: 'ar-levels' },
+      ...g.levels.map(l => {
+        const b = bestScore(`${g.id}.${l.id}`);
+        return el('div', {
+          class: 'ar-level' + (levelFor(g.id)?.id === l.id ? ' on' : ''),
+        },
+          // The game is abbreviated from its id, not from its name: "Game 1"
+          // shortens to "G1" in English and to nothing sensible in Korean, and
+          // the id is the same in every language.
+          el('span', { class: 'ar-level-name',
+            text: `G${g.id.replace(/\D/g, '')} ${t(l.name)}` }),
+          el('span', { class: 'ar-level-best', text: b ? `${b}${g.unit || ''}` : '—' }),
+        );
+      }))),
+    el('div', { class: 'hint', style: { lineHeight: 1.55 } },
+      'Plays on your wallpaper, with the page dimmed and click-through so a '
+      + 'stray click lands on the game rather than a bookmark. Esc leaves at '
+      + 'any point and your record is kept.'),
   );
 }
 
 /* ---------- tab bodies ---------- */
 const PANELS = {
   look: () => [
-    group('Wallpaper',
+    group(t('Language'),
+      row(t('Language'), (() => {
+        // Rebuilt through changeLocale rather than draw(), because every other
+        // surface on the page holds translated strings too — the dock, the
+        // homescreen bar and every widget were all built from text.
+        const sel = el('select', {},
+          el('option', { value: 'auto', selected: (S.language || 'auto') === 'auto' },
+            `${t('Follow the browser')} — ${nameOf(wanted())}`),
+          ...LOCALES.map(l => el('option', {
+            value: l.id, selected: S.language === l.id,
+          // Each language in its own script, with the English name alongside so
+          // the list is searchable by someone who cannot read the script yet.
+          }, l.id === 'en' ? l.name : `${l.name} · ${l.en}`)));
+        sel.addEventListener('change', async () => {
+          await set({ language: sel.value });
+          await changeLocale(wanted());
+          draw();
+        });
+        return sel;
+      })())),
+    group(t('Wallpaper'),
       el('div', { class: 'wp-swatches' }, ...WALLPAPERS.map(w =>
         el('div', {
           class: 'wp-sw' + (stillShowing() && !S.wallpaperCustom && S.wallpaper === w.id ? ' on' : ''),
@@ -203,28 +256,37 @@ const PANELS = {
           onPick: () => pickStill({ wallpaperCustom: on ? '' : BG_PREFIX + ph.id }),
         });
       })),
-      row('Dim', slider('stillDim', 0, 80, 5),
+      row(t('Dim'), slider('stillDim', 0, 80, 5),
         'Darkens a photo wallpaper so widgets stay readable over a bright one. '
         + 'Gradients are unaffected.'),
-      row('Custom image', el('div', { class: 'row' },
-        el('button', { class: 'btn', text: 'Upload…', onclick: pickImage }),
-        el('button', { class: 'btn', text: 'Clear', onclick: clearImage })),
+      row(t('Custom image'), el('div', { class: 'row' },
+        el('button', { class: 'btn', text: t('Upload…'), onclick: pickImage }),
+        el('button', { class: 'btn', text: t('Clear'), onclick: clearImage })),
         'A local file is stored inside the extension — it never leaves your machine.'),
-      row('Image URL', (() => {
+      row(t('Image URL'), (() => {
         const i = el('input', { type: 'text', placeholder: 'https://…',
           value: S.wallpaperCustom?.startsWith('http') ? S.wallpaperCustom : '' });
         i.addEventListener('change', async () => {
           const v = i.value.trim();
           // Rejected here rather than silently ignored later, so a typo or a
           // javascript:/data: paste says so instead of quietly doing nothing.
-          if (v && !cssImageURL(v)) { toast('Enter an http(s) image URL'); return; }
+          // isHttpURL as well as cssImageURL: the latter resolves against the
+          // page, so it accepted a scheme-less "example.com/a.jpg" that
+          // sanitize() then wiped on the next load.
+          if (v && (!isHttpURL(v) || !cssImageURL(v))) {
+            toast(t('Enter an http(s) image URL')); return;
+          }
           if (v) await delBlob(WALLPAPER_IMAGE_KEY).catch(() => {});
-          await set({ wallpaperCustom: v }); applyTheme(); draw();
+          // Same as the upload path: setting a still wallpaper turns off a
+          // running clip. Emptying the field is not choosing a wallpaper, so
+          // that case must not reach through and stop the video too.
+          if (v) await pickStill({ wallpaperCustom: v }, 'Wallpaper set');
+          else { await set({ wallpaperCustom: '' }); applyTheme(); draw(); }
         });
         return i;
       })()),
     ),
-    group('Live wallpaper (video)',
+    group(t('Live wallpaper (video)'),
       el('div', { class: 'wp-swatches' }, ...CLIPS.map(cl => {
         const on = S.wallpaperVideo === BG_PREFIX + cl.id;
         return bgSwatch(cl, {
@@ -244,45 +306,51 @@ const PANELS = {
         text: S.wallpaperVideo === 'local' ? (S.wallpaperVideoName || 'local file')
           : S.wallpaperVideo?.startsWith(BG_PREFIX) ? (S.wallpaperVideoName || 'built in')
           : S.wallpaperVideo ? 'from URL' : 'none' })),
-      row('Video file', el('div', { class: 'row' },
-        el('button', { class: 'btn', text: 'Choose MP4…', onclick: pickVideo }),
-        el('button', { class: 'btn danger', text: 'Remove', onclick: clearVideo })),
+      row(t('Video file'), el('div', { class: 'row' },
+        el('button', { class: 'btn', text: t('Choose MP4…'), onclick: pickVideo }),
+        el('button', { class: 'btn danger', text: t('Remove'), onclick: clearVideo })),
         'MP4 or WebM. Stored locally in the extension — never uploaded. '
         + 'It is muted and loops; Chrome blocks autoplay for anything with sound.'),
-      row('Video URL', (() => {
+      row(t('Video URL'), (() => {
         const i = el('input', { type: 'text', placeholder: 'https://…/clip.mp4',
           value: /^https?:/.test(S.wallpaperVideo || '') ? S.wallpaperVideo : '' });
         i.addEventListener('change', async () => {
-          await set({ wallpaperVideo: i.value.trim(), wallpaperVideoName: '' });
+          const v = i.value.trim();
+          // The same test sanitize() applies on the way back in. This field
+          // used to accept anything at all — a bare host, ftp:, javascript: —
+          // and the next load quietly wiped whatever sanitize did not
+          // recognise, so a typo looked accepted, played nothing, and had
+          // disappeared by the time you came back to check.
+          if (v && !isHttpURL(v)) { toast(t('Enter an http(s) video URL')); return; }
+          await set({ wallpaperVideo: v, wallpaperVideoName: '' });
           applyTheme(); draw();
         });
         return i;
       })()),
-      row('Dim', slider('videoDim', 0, 80, 1), 'Darkens the video so widgets stay readable.'),
-      row('Playback speed', slider('videoSpeed', 25, 200, 5, applyVideoWallpaper)),
-      row('Pause when tab hidden', toggle('videoPauseHidden'), 'Saves battery. Recommended.'),
+      row(t('Dim'), slider('videoDim', 0, 80, 1), 'Darkens the video so widgets stay readable.'),
+      row(t('Playback speed'), slider('videoSpeed', 25, 200, 5, applyVideoWallpaper)),
+      row(t('Pause when tab hidden'), toggle('videoPauseHidden'), 'Saves battery. Recommended.'),
     ),
-    group('Motion',
-      row('Animated colour blobs', toggle('animateBg')),
-      row('Blob intensity', slider('mesh', 0, 100, 1),
+    group(t('Motion'),
+      row(t('Animated colour blobs'), toggle('animateBg')),
+      row(t('Blob intensity'), slider('mesh', 0, 100, 1),
         (S.wallpaperCustom || S.wallpaperVideo)
           ? 'Blobs are hidden while a custom image or video is set, so they don’t veil it.' : null),
-      row('Film grain', slider('grain', 0, 20, 1)),
-      row('Vignette', slider('vignette', 0, 100, 5)),
+      row(t('Film grain'), slider('grain', 0, 20, 1)),
+      row(t('Vignette'), slider('vignette', 0, 100, 5)),
     ),
-    fxGroup(),
-    group('Theme',
-      row('Colour scheme', select('scheme', { dark: 'Dark', light: 'Light' })),
-      row('Accent colour', color('accent')),
-      row('UI scale', slider('fontScale', 80, 130, 1)),
+    group(t('Theme'),
+      row(t('Colour scheme'), select('scheme', { dark: t('Dark'), light: t('Light') })),
+      row(t('Accent colour'), color('accent')),
+      row(t('UI scale'), slider('fontScale', 80, 130, 1)),
     ),
-    group('Clock & greeting',
-      row('Your name', text('userName', 'shown in the greeting')),
-      row('24-hour clock', toggle('clock24')),
-      row('Show seconds', toggle('showSeconds', rebuild)),
-      row('Clock size', slider('clockSize', 40, 140, 2)),
+    group(t('Clock & greeting'),
+      row(t('Your name'), text('userName', 'shown in the greeting')),
+      row(t('24-hour clock'), toggle('clock24')),
+      row(t('Show seconds'), toggle('showSeconds', rebuild)),
+      row(t('Clock size'), slider('clockSize', 40, 140, 2)),
     ),
-    group('Private search',
+    group(t('Private search'),
       row('Search privately by default', toggle('searchIncognito', rebuild)),
       row('Engine for private searches', select('searchIncognitoEngine',
         { '': 'Same as normal', ...Object.fromEntries(Object.entries(ENGINES).map(([k, v]) => [k, v.name])) },
@@ -294,26 +362,26 @@ const PANELS = {
         + 'engine for these — DuckDuckGo, say — which is what the second setting '
         + 'is for.'),
     ),
-    group('Search',
-      row('Search engine', select('searchEngine', Object.fromEntries(
+    group(t('Search'),
+      row(t('Search engine'), select('searchEngine', Object.fromEntries(
         Object.entries(ENGINES).map(([k, v]) => [k, v.name])), rebuild)),
-      row('Live suggestions', toggle('suggestions'), 'Queries go to DuckDuckGo’s autocomplete endpoint as you type.'),
+      row(t('Live suggestions'), toggle('suggestions'), 'Queries go to DuckDuckGo’s autocomplete endpoint as you type.'),
     ),
   ],
 
   glass: () => [
-    group('Glass material',
-      row('Backdrop blur', slider('blur', 0, 40, 1)),
-      row('Saturation', slider('saturation', 100, 300, 5)),
-      row('Brightness', slider('brightness', 80, 140, 1)),
-      row('Tint opacity', slider('tintAlpha', 0, 40, 1)),
-      row('Edge light', slider('edgeAlpha', 0, 100, 1)),
-      row('Corner radius', slider('radius', 0, 48, 1)),
-      row('Refraction', slider('refract', 0, 120, 1),
+    group(t('Glass material'),
+      row(t('Backdrop blur'), slider('blur', 0, 40, 1)),
+      row(t('Saturation'), slider('saturation', 100, 300, 5)),
+      row(t('Brightness'), slider('brightness', 80, 140, 1)),
+      row(t('Tint opacity'), slider('tintAlpha', 0, 40, 1)),
+      row(t('Edge light'), slider('edgeAlpha', 0, 100, 1)),
+      row(t('Corner radius'), slider('radius', 0, 48, 1)),
+      row(t('Refraction'), slider('refract', 0, 120, 1),
         'Bends the backdrop near panel edges. 0 turns it off for a flatter, faster look.'),
-      row('Pointer sheen', toggle('sheen')),
+      row(t('Pointer sheen'), toggle('sheen')),
     ),
-    group('Presets',
+    group(t('Presets'),
       el('div', { class: 'chips' },
         preset('Signature', { blur: 18, saturation: 180, brightness: 108, tintAlpha: 10, edgeAlpha: 55, radius: 26, refract: 42 }),
         preset('Frosted', { blur: 34, saturation: 130, brightness: 104, tintAlpha: 22, edgeAlpha: 40, radius: 22, refract: 8 }),
@@ -324,11 +392,13 @@ const PANELS = {
   ],
 
   dock: () => [
-    group('Bookmark dock',
-      row('Position', select('dockEdge', { bottom: 'Bottom', top: 'Top' }, applyDockSettings)),
-      row('Icon size', slider('dockSize', 34, 84, 1)),
-      row('Icon spacing', slider('dockGap', 0, 22, 1)),
-      row('Hover effect', select('dockHover', {
+    group(t('Bookmark dock'),
+      row(t('Position'), select('dockEdge', {
+        bottom: t('Bottom'), top: t('Top'), left: t('Left'), right: t('Right'),
+      }, () => { applyDockSettings(); window.dispatchEvent(new Event('lgt:rescale')); })),
+      row(t('Icon size'), slider('dockSize', 34, 84, 1)),
+      row(t('Icon spacing'), slider('dockGap', 0, 22, 1)),
+      row(t('Hover effect'), select('dockHover', {
         magnify: 'Magnify (macOS dock)',
         lift:    'Lift up',
         pop:     'Pop & hold',
@@ -340,28 +410,29 @@ const PANELS = {
         'Pop & hold stays raised while you’re on an icon and drops the moment '
         + 'you leave. Jelly wobbles only the icon you point at; the rest ripple '
         + 'out to their neighbours.'),
-      row('Hover scale', slider('dockMagnify', 1, 2.4, 0.05),
+      row(t('Hover scale'), slider('dockMagnify', 1, 2.4, 0.05),
         'Used by Magnify and Pop & hold.'),
-      row('Icon quality', select('iconSource', {
+      row(t('Icon quality'), select('iconSource', {
         auto: 'Auto — sharpen when blurry',
         chrome: 'Chrome only (never leaves PC)',
         sharp: 'Always high-res',
       }, async () => { await dropCache('icon:'); renderDock(); }),
         'Chrome usually stores icons at 16px, which look blurry at dock size. '
         + 'Auto fetches a sharper icon from Google/DuckDuckGo only when Chrome’s is too small.'),
-      row('Icon vibrancy', slider('dockVibrancy', 100, 220, 5),
+      row(t('Icon vibrancy'), slider('dockVibrancy', 100, 220, 5),
         'Boosts saturation on favicons so brand colours read at dock size.'),
-      row('Icon contrast', slider('dockContrast', 90, 150, 2)),
-      row('Show labels on hover', toggle('dockLabels')),
-      row('Auto-hide until hover', toggle('dockAutohide', applyDockSettings)),
-      row('Max items', number('dockMaxItems', 4, 60, renderDock)),
-      row('Append top sites', toggle('dockShowTopSites', renderDock)),
+      row(t('Icon contrast'), slider('dockContrast', 90, 150, 2)),
+      row(t('Show labels on hover'), toggle('dockLabels')),
+      row(t('Auto-hide until hover'), toggle('dockAutohide', applyDockSettings)),
+      row(t('Max items'), number('dockMaxItems', 4, 60, renderDock)),
+      row(t('Append top sites'), toggle('dockShowTopSites', renderDock)),
     ),
-    group('Source folder', folderPicker()),
+    group(t('Source folder'), folderPicker()),
+    group(t('Bulk import'), ...bulkImportControls()),
   ],
 
   widgets: () => [
-    group('Enabled widgets', ...Object.entries(WIDGET_META).map(([id, label]) => {
+    group(t('Enabled widgets'), ...Object.entries(WIDGET_META).map(([id, label]) => {
       const sw = el('div', { class: 'switch' + (S.widgets[id]?.on ? ' on' : '') }, el('i'));
       sw.addEventListener('click', async () => {
         sw.classList.toggle('on');
@@ -374,12 +445,12 @@ const PANELS = {
       // Slightly larger label than a normal settings row. These rows hold only
       // a name and a toggle pinned to the right edge, so at the default size
       // the two sit a long way apart with nothing between them.
-      const r = row(label, sw);
+      const r = row(t(label), sw);
       r.classList.add('wtoggle');
       return r;
     })),
-    group('Layout',
-      row('Shrink to fit', (() => {
+    group(t('Layout'),
+      row(t('Shrink to fit'), (() => {
         const sw = el('div', { class: 'switch' + (S.widgetScaleMode === 'window' ? ' on' : ''), role: 'switch' }, el('i'));
         sw.addEventListener('click', async () => {
           sw.classList.toggle('on');
@@ -390,13 +461,13 @@ const PANELS = {
         });
         return sw;
       })(), 'Scales every widget down together when the window is too small for them. Never scales up.'),
-      row('Edit mode', (() => {
+      row(t('Edit mode'), (() => {
         const b = el('button', { class: 'btn', text: 'Toggle drag mode',
           onclick: () => window.dispatchEvent(new Event('lgt:edit')) });
         return b;
       })(), 'Drag panels anywhere. Press E to toggle.'),
-      row('Reset positions and sizes', el('button', {
-        class: 'btn danger', text: 'Reset layout',
+      row(t('Reset positions and sizes'), el('button', {
+        class: 'btn danger', text: t('Reset layout'),
         onclick: async () => {
           // anchor and placed have to go back too. Resetting only x/y left a
           // dragged panel with anchor:null, so a centre-anchored default like
@@ -414,11 +485,13 @@ const PANELS = {
               vw: undefined, vh: undefined,
             });
           }
-          rebuild(); toast('Layout reset');
+          rebuild(); toast(t('Layout reset'));
         },
       })),
     ),
   ],
+
+  arcade: () => [arcadeGroup()],
 
   weather: () => {
     const results = el('div', { style: { marginTop: '6px' } });
@@ -447,7 +520,7 @@ const PANELS = {
     });
 
     return [
-      group('Location',
+      group(t('Location'),
         // Masked here too, or opening settings during a screen share would
         // undo the point of hiding it on the new tab. Click to reveal.
         row('Current', (() => {
@@ -466,7 +539,7 @@ const PANELS = {
         })()),
         input, results,
         row('Detect from IP', el('button', {
-          class: 'btn', text: 'Detect',
+          class: 'btn', text: t('Detect'),
           onclick: async () => {
             const p = await detectPlace();
             if (!p) return toast('Detection failed — enter a city instead.');
@@ -475,8 +548,8 @@ const PANELS = {
           },
         }), 'Uses a public IP-geolocation service. Roughly city-accurate.'),
       ),
-      group('Privacy',
-        row('Show location', select('weatherPrivacy', {
+      group(t('Privacy'),
+        row(t('Show location'), select('weatherPrivacy', {
           full: 'City and country',
           country: 'Country only',
           hidden: 'Don’t show it',
@@ -486,10 +559,10 @@ const PANELS = {
           + 'The weather API still needs your coordinates to return a forecast, '
           + 'so this hides the location from view rather than from the request.'),
       ),
-      group('Units',
-        row('Temperature', select('temperatureUnit', { celsius: 'Celsius', fahrenheit: 'Fahrenheit' },
+      group(t('Units'),
+        row(t('Temperature'), select('temperatureUnit', { celsius: t('Celsius'), fahrenheit: t('Fahrenheit') },
           async () => { await dropCache('wx:'); window.dispatchEvent(new Event('lgt:reload')); })),
-        row('Wind', select('windUnit', { kmh: 'km/h', mph: 'mph', ms: 'm/s', kn: 'knots' },
+        row(t('Wind'), select('windUnit', { kmh: 'km/h', mph: 'mph', ms: 'm/s', kn: 'knots' },
           async () => { await dropCache('wx:'); window.dispatchEvent(new Event('lgt:reload')); })),
       ),
     ];
@@ -509,7 +582,7 @@ const PANELS = {
           window.dispatchEvent(new Event('lgt:reload'));
         });
         const del = el('button', {
-          class: 'icon-btn', text: '✕', title: 'Remove',
+          class: 'icon-btn', text: '✕', title: t('Remove'),
           onclick: async () => {
             const feeds = S.feeds.filter((_, j) => j !== i);
             await set({ feeds }); drawFeeds(); window.dispatchEvent(new Event('lgt:reload'));
@@ -522,18 +595,18 @@ const PANELS = {
     };
     drawFeeds();
 
-    const nameI = el('input', { type: 'text', placeholder: 'Name' });
+    const nameI = el('input', { type: 'text', placeholder: t('Name') });
     const urlI = el('input', { type: 'text', placeholder: 'https://example.com/feed.xml' });
 
     return [
-      group('Feeds', list),
-      group('Add a feed',
-        row('Name', nameI), row('RSS / Atom URL', urlI),
+      group(t('Feeds'), list),
+      group(t('Add a feed'),
+        row(t('Name'), nameI), row('RSS / Atom URL', urlI),
         row('', el('button', {
-          class: 'btn primary', text: 'Add feed',
+          class: 'btn primary', text: t('Add feed'),
           onclick: async () => {
             const url = urlI.value.trim(), name = nameI.value.trim() || 'Custom';
-            if (!/^https?:\/\//.test(url)) return toast('Enter a full http(s) URL');
+            if (!/^https?:\/\//.test(url)) return toast(t('Enter a full http(s) URL'));
             // Custom hosts need permission granted at runtime.
             const granted = await chrome.permissions.request({ origins: [new URL(url).origin + '/*'] });
             if (!granted) return toast('Permission denied for that host');
@@ -542,11 +615,11 @@ const PANELS = {
             nameI.value = urlI.value = '';
             drawFeeds();
             window.dispatchEvent(new Event('lgt:reload'));
-            toast('Feed added');
+            toast(t('Feed added'));
           },
         })),
       ),
-      group('Display', row('Headlines shown', number('newsCount', 3, 40, () => window.dispatchEvent(new Event('lgt:reload'))))),
+      group(t('Display'), row(t('Headlines shown'), number('newsCount', 3, 40, () => window.dispatchEvent(new Event('lgt:reload'))))),
     ];
   },
 
@@ -556,7 +629,7 @@ const PANELS = {
     sp.isConnected().then(c => { status.textContent = c ? 'connected' : 'not connected'; });
 
     return [
-      group('Spotify setup',
+      group(t('Spotify setup'),
         el('div', { class: 'hint', style: { lineHeight: 1.6, marginBottom: '8px' } },
           '1. Create an app on the Spotify dashboard  ·  2. Paste its Client ID below  ·  '
           + '3. Add this exact Redirect URI to the app  ·  4. Click Connect.'),
@@ -566,31 +639,31 @@ const PANELS = {
         el('div', { class: 'row', style: { marginBottom: '10px' } },
           el('button', { class: 'btn', text: 'Open Spotify dashboard ↗',
             onclick: () => openTab('https://developer.spotify.com/dashboard') })),
-        row('Redirect URI', ''),
+        row(t('Redirect URI'), ''),
         el('div', { class: 'code', text: uri }),
-        el('button', { class: 'btn', style: { marginTop: '6px' }, text: 'Copy redirect URI',
+        el('button', { class: 'btn', style: { marginTop: '6px' }, text: t('Copy redirect URI'),
           onclick: () => navigator.clipboard.writeText(uri)
-            .then(() => toast('Copied'))
+            .then(() => toast(t('Copied')))
             // Clipboard writes are refused when the document is not focused,
             // which happens if the click lands while another window has focus.
             // Silently doing nothing looks like a broken button.
             .catch(() => toast('Could not copy — select the URI above instead')) }),
-        row('Client ID', text('spotifyClientId', 'e.g. 3f9a…')),
-        row('Status', status),
+        row(t('Client ID'), text('spotifyClientId', 'e.g. 3f9a…')),
+        row(t('Status'), status),
         el('div', { class: 'row', style: { marginTop: '8px' } },
           el('button', {
-            class: 'btn primary', text: 'Connect Spotify',
+            class: 'btn primary', text: t('Connect Spotify'),
             onclick: async () => {
               try { await sp.connect(); toast('Connected'); status.textContent = 'connected'; rebuild(); }
               catch (e) { toast(e.message); }
             },
           }),
           el('button', {
-            class: 'btn danger', text: 'Disconnect',
+            class: 'btn danger', text: t('Disconnect'),
             onclick: async () => { await sp.disconnect(); status.textContent = 'not connected'; toast('Disconnected'); rebuild(); },
           })),
       ),
-      group('Visualizer audio', ...vizSourceControls(),
+      group(t('Visualizer audio'), ...vizSourceControls(),
         row('Sensitivity', slider('vizSensitivity', 20, 250, 5),
           'Lower this if the bars sit pinned at full height. Only affects captured audio.'),
         row('Vocal emphasis', slider('vizVocal', 0, 100, 5),
@@ -605,14 +678,14 @@ const PANELS = {
           + 'to this tempo. Ignored by Microphone, Tab audio and System audio, '
           + 'which use the real beat.'),
       ),
-      group('Visualizer style',
+      group(t('Visualizer style'),
         row('Shape', select('vizMode', { bars: 'Bars', radial: 'Radial' })),
         row('Split beat & vocals', toggle('vizSplit'),
           'Beat sits in the centre and vocals spread to the flanks. During a '
           + 'drums-only passage the beat expands to fill the whole bar, then '
           + 'gives ground back when the vocals return. Bars shape only.'),
       ),
-      group('Lyrics',
+      group(t('Lyrics'),
         row('Timing offset (ms)', number('lyricsOffset', -5000, 5000),
           'Negative shows lines earlier. Lyrics come from LRCLIB, a free community database.'),
       ),
@@ -620,7 +693,7 @@ const PANELS = {
   },
 
   data: () => [
-    group('World clocks',
+    group(t('World clocks'),
       ...S.worldClocks.map((z, i) => row(z.label, el('button', {
         class: 'icon-btn', text: '✕',
         onclick: async () => {
@@ -633,7 +706,7 @@ const PANELS = {
         return el('div', {},
           row('Label', l), row('Time zone', t),
           row('', el('button', {
-            class: 'btn', text: 'Add clock',
+            class: 'btn', text: t('Add clock'),
             onclick: async () => {
               if (!l.value.trim() || !t.value.trim()) return toast('Fill both fields');
               try { new Date().toLocaleString(undefined, { timeZone: t.value.trim() }); }
@@ -643,7 +716,7 @@ const PANELS = {
             },
           })));
       })()),
-    group('Countdown',
+    group(t('Countdown'),
       row('Counting to', select('countdownMode', { holiday: 'A holiday', custom: 'A custom date' },
         () => { rebuild(); draw(); })),
       ...(S.countdownMode === 'custom' ? [
@@ -662,12 +735,12 @@ const PANELS = {
         return t ? t.date.toLocaleDateString(undefined,
           { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' }) : 'not set';
       })() }))),
-    group('Crypto',
+    group(t('Crypto'),
       row('CoinGecko IDs', text('coins', 'bitcoin,ethereum,solana', rebuild), 'Comma separated, lowercase.')),
-    group('Backup',
+    group(t('Backup'),
       el('div', { class: 'row' },
         el('button', {
-          class: 'btn', text: 'Export settings',
+          class: 'btn', text: t('Export settings'),
           onclick: () => {
             const blob = new Blob([exportSettings()], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
@@ -680,25 +753,25 @@ const PANELS = {
           },
         }),
         el('button', {
-          class: 'btn', text: 'Import…',
+          class: 'btn', text: t('Import…'),
           onclick: () => {
             const f = el('input', { type: 'file', accept: 'application/json' });
             f.addEventListener('change', async () => {
               try {
                 await importSettings(await f.files[0].text());
                 applyTheme(); applyDockSettings(); renderDock(); rebuild(); draw();
-                toast('Settings imported');
+                toast(t('Settings imported'));
               } catch (e) { toast('Import failed: ' + e.message); }
             });
             f.click();
           },
         })),
       row('Clear cached data', el('button', {
-        class: 'btn', text: 'Clear cache',
-        onclick: async () => { await dropCache(); window.dispatchEvent(new Event('lgt:reload')); toast('Cache cleared'); },
+        class: 'btn', text: t('Clear cache'),
+        onclick: async () => { await dropCache(); window.dispatchEvent(new Event('lgt:reload')); toast(t('Cache cleared')); },
       }), 'Weather, news, crypto and lyrics are cached locally.'),
       row('Reset everything', el('button', {
-        class: 'btn danger', text: 'Factory reset',
+        class: 'btn danger', text: t('Factory reset'),
         onclick: async () => {
           if (!confirm('Reset every setting to defaults? Notes and tasks are kept.')) return;
           // The wallpaper blobs are not part of settings, so a reset would
@@ -822,6 +895,99 @@ function preset(name, values) {
   });
 }
 
+/* ---------- bulk import ----------
+   Two ways in, one outcome: everything lands in the folder that feeds the dock
+   for the homescreen you are on. That is stated in the UI rather than left to
+   be discovered, because it is the one thing about this that can surprise you —
+   the folder is per-homescreen, so importing on the wrong one puts a few
+   hundred bookmarks somewhere you were not looking. */
+function bulkImportControls() {
+  const status = el('div', { class: 'hint', style: { lineHeight: 1.55 } });
+
+  /** One sentence for whatever just happened. Counts rather than a bare
+   *  "Done", because "added 0, skipped 412" and "added 412" are the same
+   *  screen otherwise, and the first one needs explaining. */
+  const report = r => {
+    const bits = [`Added ${r.added}`];
+    if (r.skipped) bits.push(`${r.skipped} already there`);
+    if (r.failed) bits.push(`${r.failed} rejected`);
+    if (r.overflow) bits.push(`${r.overflow} over the ${IMPORT_CAP} limit, not imported`);
+    let msg = bits.join(' · ') + '.';
+    // The dock truncates at dockMaxItems and says nothing about it, so an
+    // import of 300 into a dock showing 24 looks like it mostly failed.
+    const cap = S.dockMaxItems || 24;
+    if (r.added && r.shown >= cap) {
+      msg += ` The dock is showing ${cap} of them — raise “Max items” above to see more.`;
+    }
+    status.textContent = msg;
+    toast(`Added ${r.added} bookmark${r.added === 1 ? '' : 's'}`);
+    renderDock();
+  };
+
+  const busy = t => { status.textContent = t; };
+
+  const fileBtn = el('button', {
+    class: 'btn', text: t('Choose bookmarks file…'),
+    onclick: () => {
+      const f = el('input', { type: 'file', accept: '.html,.htm,text/html' });
+      f.addEventListener('change', async () => {
+        const file = f.files[0];
+        if (!file) return;
+        // A bookmarks export is text. Anything of this size is not one, and
+        // reading it would just be a way to run the tab out of memory.
+        if (file.size > 20e6) { status.textContent = 'That file is over 20 MB — it is probably not a bookmarks export.'; return; }
+        busy('Reading…');
+        try {
+          const entries = parseBookmarksFile(await file.text());
+          if (!entries.length) {
+            status.textContent = 'No links found in that file. It should be the HTML file a browser exports, not a folder or a .json.';
+            return;
+          }
+          busy(`Importing ${Math.min(entries.length, IMPORT_CAP)}…`);
+          report(await importBookmarks(entries, (done, total) => busy(`Importing ${done} of ${total}…`)));
+        } catch (e) {
+          status.textContent = 'Could not read that file: ' + e.message;
+        }
+      });
+      f.click();
+    },
+  });
+
+  const box = el('textarea', {
+    class: 'dp-field bulk-paste', rows: 4, spellcheck: 'false',
+    placeholder: 'One link per line\ngithub.com\nhttps://news.ycombinator.com',
+  });
+
+  const pasteBtn = el('button', {
+    class: 'btn', text: t('Add pasted links'),
+    onclick: async () => {
+      const { entries, invalid } = parseLinkList(box.value);
+      if (!entries.length) {
+        status.textContent = invalid
+          ? `None of those ${invalid} lines look like links.`
+          : 'Paste some links first.';
+        return;
+      }
+      busy(`Importing ${entries.length}…`);
+      const r = await importBookmarks(entries, (done, total) => busy(`Importing ${done} of ${total}…`));
+      box.value = '';
+      report({ ...r, failed: r.failed + invalid });
+    },
+  });
+
+  return [
+    el('div', { class: 'hint', style: { lineHeight: 1.55, marginBottom: '8px' } },
+      'Adds to the dock folder for ',
+      el('b', { text: activeSpace()?.name || 'this homescreen' }),
+      '. Links already in it are skipped, so running the same import twice is safe. '
+      + 'Folders in the file are flattened — the dock is one row.'),
+    row(t('Bookmarks file'), fileBtn),
+    box,
+    el('div', { class: 'row', style: { marginTop: '6px' } }, pasteBtn),
+    status,
+  ];
+}
+
 function folderPicker() {
   const wrap = el('div');
   chrome.bookmarks.getTree().then(([root]) => {
@@ -847,7 +1013,7 @@ function folderPicker() {
       }
       renderDock();
     });
-    wrap.append(row('Folder', s,
+    wrap.append(row(t('Folder'), s,
       `Which bookmark folder fills the dock for “${activeSpace()?.name || 'this homescreen'}”.`));
   });
   return wrap;
@@ -874,12 +1040,12 @@ const norm = s => s.toLowerCase().replace(/\s+/g, ' ').trim();
 /** Which tab a group came from, as a heading that jumps back to it. */
 function crumb(tabId, tabLabel, title) {
   return el('h3', {}, el('button', {
-    class: 'set-crumb', type: 'button', title: `Go to ${tabLabel}`,
+    class: 'set-crumb', type: 'button', title: t('Go to {tab}', { tab: t(tabLabel) }),
     onclick: () => { activeTab = tabId; resetSearch(); },
   },
-    el('span', { class: 'crumb-tab', text: tabLabel }),
+    el('span', { class: 'crumb-tab', text: t(tabLabel) }),
     el('span', { class: 'crumb-sep', text: '›' }),
-    el('span', { text: title }),
+    el('span', { text: t(title) }),
   ));
 }
 
@@ -920,7 +1086,7 @@ function searchResults(q) {
 
   if (!out.length) {
     out.push(el('div', { class: 'hint', style: { lineHeight: 1.6 } },
-      `Nothing matches “${q}”.`));
+      t('Nothing matches “{q}”.', { q })));
   }
   return out;
 }
@@ -948,7 +1114,9 @@ function draw() {
   if (!query) {
     for (const [id, label] of Object.entries(TABS)) {
       tabs.append(el('button', {
-        class: activeTab === id ? 'on' : '', text: label,
+        // Translated here, not in TABS: that table is built at module load,
+        // long before a catalogue exists.
+        class: activeTab === id ? 'on' : '', text: t(label),
         onclick: () => { activeTab = id; draw(); },
       }));
     }
@@ -1110,13 +1278,18 @@ export function initSettings(onRebuild) {
  *  button rather than as "the video is in front". Nothing is destroyed: a
  *  local clip stays in IndexedDB and a packaged one is a file, so re-picking
  *  either is one click. */
-async function pickStill(patch) {
+async function pickStill(patch, note = '') {
   const hadVideo = !!S.wallpaperVideo;
   if (hadVideo) { patch = { ...patch, wallpaperVideo: '', wallpaperVideoName: '' }; }
   await set(patch);
   applyTheme();
   draw();
-  if (hadVideo) toast('Live wallpaper turned off');
+  // `note` is the caller's own message. Combined rather than toasted
+  // separately, because two toasts in the same turn replace each other and
+  // whichever lost would be the one the user needed.
+  const msg = note && hadVideo ? `${note} · live wallpaper turned off`
+    : note || (hadVideo ? 'Live wallpaper turned off' : '');
+  if (msg) toast(msg);
 }
 
 async function pickVideo() {
@@ -1153,12 +1326,33 @@ async function pickVideo() {
 }
 
 async function clearVideo() {
-  await delBlob(WALLPAPER_VIDEO_KEY).catch(() => {});
-  clearLocalPoster();
+  // Delete the uploaded file only when it is not some *other* video that is
+  // playing. With a built-in clip on screen this button reads as "stop this
+  // clip", and it was silently destroying an upload that can be hundreds of
+  // megabytes and has no second copy anywhere.
+  //
+  // Deliberately not "only when 'local' is playing": with nothing playing at
+  // all, an orphaned upload would then have no way to be deleted, which is a
+  // worse trade than the one being fixed. So it is protected exactly when
+  // something else is on screen, and turning that off first still gets you
+  // back to a Remove that removes.
+  const playingSomethingElse = !!S.wallpaperVideo && S.wallpaperVideo !== 'local';
+  let kept = false;
+
+  if (playingSomethingElse) {
+    kept = !!(await getBlob(WALLPAPER_VIDEO_KEY).catch(() => null));
+  } else {
+    await delBlob(WALLPAPER_VIDEO_KEY).catch(() => {});
+    clearLocalPoster();
+    invalidateLocalVideo();
+  }
+
   await set({ wallpaperVideo: '', wallpaperVideoName: '' });
   applyTheme();
   draw();
-  toast('Live wallpaper removed');
+  toast(kept ? 'Live wallpaper off · your uploaded video is kept'
+    : playingSomethingElse ? 'Live wallpaper turned off'
+    : 'Live wallpaper removed');
 }
 
 /** Wallpapers are stored as Blobs in IndexedDB, not as base64 in settings.
@@ -1206,15 +1400,17 @@ async function storeWallpaper(file) {
   // Replacing an existing local wallpaper leaves the setting unchanged, so the
   // cached object URL has to be dropped explicitly or the old image stays up.
   invalidateLocalImage();
-  await set({ wallpaperCustom: 'local' });
-  applyTheme(); draw();
-  toast('Wallpaper set' + note);
+  // Through pickStill, not a bare set: choosing a still wallpaper has to turn
+  // off any live one, and this path used to skip that. The video layer renders
+  // on top, so uploading an image while a clip was playing changed nothing you
+  // could see — while still toasting "Wallpaper set".
+  await pickStill({ wallpaperCustom: 'local' }, 'Wallpaper set' + note);
 }
 
 async function clearImage() {
   await delBlob(WALLPAPER_IMAGE_KEY).catch(() => {});
   await set({ wallpaperCustom: '' });
-  applyTheme(); draw(); toast('Wallpaper cleared');
+  applyTheme(); draw(); toast(t('Wallpaper cleared'));
 }
 
 async function pickImage() {

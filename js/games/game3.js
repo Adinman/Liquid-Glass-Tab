@@ -1,4 +1,4 @@
-/* Pong, played on the wallpaper.
+/* Game 3 — a pong.
  *
  * Scoring is a rally count, not a scoreline, and that is a deliberate choice: a
  * first-to-seven match has a best score of seven and nothing to chase after the
@@ -7,16 +7,19 @@
  * faster and more accurate as the rally grows, so the number stops climbing
  * where your reflexes stop.
  *
- * Your paddle has a speed limit. Without one the mouse teleports it and the
- * game cannot be lost, which is a screensaver rather than something to do while
- * a page loads.
+ * Your paddle is on the arrow keys, and it has a speed limit. It used to
+ * follow the mouse, which had to be speed-limited for the same reason — an
+ * unlimited paddle teleports and the game cannot be lost — but a limited one
+ * then lags the cursor, so the pointer and the bat were never in the same place
+ * and aiming felt broken. A key press has no position to disagree with, so the
+ * limit is just how fast the bat moves and reads as the paddle's own weight.
  *
  * The ball is stepped in substeps rather than one big move per frame. At 144 Hz
  * that is wasted effort, but on the frame after a stall — an alt-tab, a garbage
  * collection — dt is capped at 50 ms and a single move of that size would carry
  * the ball clean through a paddle.
  */
-import { S, set } from '../state.js';
+import { recordScore, bestScore } from '../state.js';
 
 const PADDLE_H = 0.17;       // of court height
 const PADDLE_W = 12;         // px
@@ -28,22 +31,47 @@ const MAX_SPEED = 19;
 const PLAYER_SPEED = 12.5;   // px per 60th; the whole difficulty of the game
 const SERVE_DELAY = 750;     // ms
 
-export const pong = {
-  id: 'pong',
-  // See FX_GAMES in js/config.js for the name and description.
-  ambient: false,
+export const game3 = {
+  id: 'game3',
+  // See ARCADE in js/config.js for the name and description.
+
+  /* A still mid-rally. Fixed positions, not random — a preview that reshuffles
+     on every settings redraw reads as a glitch rather than as a game. */
+  preview(c, w, h) {
+    c.fillStyle = 'rgba(10,12,20,.55)';
+    c.fillRect(0, 0, w, h);
+
+    c.strokeStyle = 'rgba(255,255,255,.14)';
+    c.lineWidth = 1.5;
+    c.setLineDash([4, 6]);
+    c.beginPath(); c.moveTo(w / 2, 4); c.lineTo(w / 2, h - 4); c.stroke();
+    c.setLineDash([]);
+
+    const pw = Math.max(3, w * 0.022);
+    const ph = h * 0.3;
+    const bat = (x, y, colour) => {
+      c.fillStyle = colour;
+      c.beginPath();
+      c.roundRect(x, y - ph / 2, pw, ph, pw / 2);
+      c.fill();
+    };
+    bat(w * 0.06, h * 0.58, '#7cc6ff');
+    bat(w * 0.94 - pw, h * 0.4, 'rgba(255,255,255,.72)');
+
+    c.fillStyle = '#fff';
+    c.beginPath();
+    c.arc(w * 0.42, h * 0.5, Math.max(2, h * 0.045), 0, 6.2832);
+    c.fill();
+  },
 
   create(host) {
     let W = host.W, H = host.H;
     let state = 'ready';               // ready | play | over
     let wait = SERVE_DELAY;
     let rally = 0;
-    // Read live, never snapshotted. A copy taken here goes stale and there is
-    // nothing to correct it: refreshScene() deliberately leaves a running game
-    // alone, so a tab that opened Pong while the record was 0 still believed
-    // that after another tab had set it to 30 — and a run of 1 then beat its
-    // own stale copy and wrote 1 over the real record.
-    const record = () => Number(S.pongBest) || 0;
+    // Read live, never snapshotted — see the note on recordScore in
+    // js/state.js for what a stale copy did to this game's record.
+    const record = () => bestScore('game3');
     let beat = false;                  // this run passed the old record
     let flash = 0;                     // ms of impact flash left
     let over = 0;                      // ms since the game ended
@@ -80,11 +108,8 @@ export const pong = {
     function finish() {
       state = 'over';
       over = 0;
-      if (rally > record()) {
-        beat = true;
-        // One write per game, and it is the only thing this scene persists.
-        set({ pongBest: rally });
-      }
+      // One write per game, and it is the only thing this game persists.
+      beat = recordScore('game3', rally);
     }
 
     function restart() {
@@ -179,6 +204,13 @@ export const pong = {
       key(e) {
         if (e.key === 'Escape') { host.exit(); return true; }
         if (e.key === 'Enter' && state === 'over' && over > 200) { restart(); return true; }
+        // Consumed so the arrows never reach the page, and so a serve can be
+        // started with the same keys that move the bat.
+        if (e.key === 'ArrowUp' || e.key === 'ArrowDown'
+            || e.key === 'w' || e.key === 'W' || e.key === 's' || e.key === 'S') {
+          if (state === 'ready') wait = 0;
+          return true;
+        }
         return false;
       },
 
@@ -189,11 +221,14 @@ export const pong = {
 
         /* paddles */
         const half = you.h / 2;
-        if (host.pointer.inside) {
-          const want = Math.max(half, Math.min(H - half, host.pointer.y));
-          const d = want - you.y;
-          const lim = PLAYER_SPEED * f;
-          you.y += Math.abs(d) <= lim ? d : Math.sign(d) * lim;
+        // Read from the held-key set rather than the keydown edge, so holding a
+        // key keeps moving. Both pressed at once cancel, which is what you want
+        // from a rocker: no jitter, and no last-one-wins surprise.
+        const up = host.keys.has('ArrowUp') || host.keys.has('w') || host.keys.has('W');
+        const down = host.keys.has('ArrowDown') || host.keys.has('s') || host.keys.has('S');
+        if (up !== down) {
+          you.y = Math.max(half, Math.min(H - half,
+            you.y + (down ? 1 : -1) * PLAYER_SPEED * f));
         }
 
         if (state === 'play') {
@@ -279,12 +314,12 @@ export const pong = {
           c.fillText(`${rally} ${rally === 1 ? 'return' : 'returns'}`, W / 2, H * 0.56);
           c.fillStyle = 'rgba(255,255,255,.45)';
           c.font = '500 13px system-ui, sans-serif';
-          c.fillText('click to play again · Esc to leave', W / 2, H * 0.60);
+          c.fillText('Enter to play again · Esc to leave', W / 2, H * 0.60);
           c.globalAlpha = 1;
         } else {
           c.fillStyle = 'rgba(255,255,255,.30)';
           c.font = '500 12px system-ui, sans-serif';
-          c.fillText('Esc to leave', W / 2, H - 22);
+          c.fillText('↑ ↓ to move · Esc to leave', W / 2, H - 22);
         }
 
         c.textAlign = 'start';

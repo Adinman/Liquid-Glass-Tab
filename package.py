@@ -184,7 +184,12 @@ def registry_ids(block):
     if not m:
         fail(f"could not find the {block} table in js/config.js")
         return []
-    return re.findall(r"id:\s*'([A-Za-z0-9_-]+)'", m.group(1))
+    body = m.group(1)
+    # Nested arrays first. ARCADE entries carry a `levels: [...]` list whose
+    # members also have ids, and a flat findall reported easy/medium/hard as
+    # three missing games. Only the table's own entries count.
+    body = re.sub(r"\w+:\s*\[.*?\]", "", body, flags=re.S)
+    return re.findall(r"id:\s*'([A-Za-z0-9_-]+)'", body)
 
 
 def check_assets_present(files):
@@ -210,34 +215,69 @@ def check_assets_present(files):
         need(f"assets/bg/{bid}.poster.avif", build)
 
 
-def check_fx_registry():
-    """FX_SCENES/FX_GAMES in config.js must match the registry in js/fx/index.js.
+def check_arcade_registry():
+    """ARCADE in config.js must match the registry in js/games/index.js.
 
-    The two are separate on purpose — the settings picker lists every scene by
+    The two are separate on purpose — the settings picker lists every game by
     name and must not import any of them, or the lazy load that keeps this code
-    off a new tab with no scene enabled would be defeated. The cost of that
-    split is exactly this drift: a scene named in config with no entry in the
-    registry is a picker card that silently does nothing when clicked, which
-    looks like a broken feature rather than a missing line.
+    off a new tab nobody plays on would be defeated. The cost of that split is
+    exactly this drift: a game named in config with no entry in the registry is
+    a picker card that silently does nothing when clicked, which looks like a
+    broken feature rather than a missing line.
     """
-    src = os.path.join(ROOT, "js", "fx", "index.js")
+    src = os.path.join(ROOT, "js", "games", "index.js")
     if not os.path.exists(src):
-        fail("js/fx/index.js is missing")
+        fail("js/games/index.js is missing")
         return
     with open(src, encoding="utf-8") as f:
         text = f.read()
 
-    for block, table in (("SCENES", "FX_SCENES"), ("GAMES", "FX_GAMES")):
-        m = re.search(r"export const %s = \{(.*?)\};" % block, text, re.S)
-        if not m:
-            fail(f"could not find the {block} table in js/fx/index.js")
+    m = re.search(r"export const GAMES = \{(.*?)\};", text, re.S)
+    if not m:
+        fail("could not find the GAMES table in js/games/index.js")
+        return
+    registered = set(re.findall(r"^\s*([A-Za-z0-9_]+)\s*,", m.group(1), re.M))
+    named = set(registry_ids("ARCADE"))
+    for missing in sorted(named - registered):
+        fail(f"ARCADE lists '{missing}' but js/games/index.js GAMES does not")
+    for extra in sorted(registered - named):
+        fail(f"js/games/index.js GAMES exports '{extra}' but ARCADE does not name it")
+
+    # Every game must be able to draw its own picker preview. Without one the
+    # card renders as an empty black rectangle, which reads as a broken game.
+    for gid in sorted(named):
+        mod = os.path.join(ROOT, "js", "games", f"{gid}.js")
+        if not os.path.exists(mod):
+            fail(f"ARCADE lists '{gid}' but js/games/{gid}.js is missing")
             continue
-        registered = set(re.findall(r"^\s*([A-Za-z0-9_]+)\s*,", m.group(1), re.M))
-        named = set(registry_ids(table))
-        for missing in sorted(named - registered):
-            fail(f"{table} lists '{missing}' but js/fx/index.js {block} does not")
-        for extra in sorted(registered - named):
-            fail(f"js/fx/index.js {block} exports '{extra}' but {table} does not name it")
+        with open(mod, encoding="utf-8") as f:
+            if "preview(" not in f.read():
+                fail(f"js/games/{gid}.js has no preview() — its picker card would be blank")
+
+
+def check_locales():
+    """Every language in js/locales/index.js must have its catalogue file.
+
+    The picker is built from that table, so a language listed without a file is
+    an option that silently falls back to English and logs an error — which
+    reads as the language being broken rather than as absent. The reverse is
+    fine: a catalogue with no entry is simply not offered yet.
+    """
+    idx = os.path.join(ROOT, "js", "locales", "index.js")
+    if not os.path.exists(idx):
+        fail("js/locales/index.js is missing")
+        return
+    with open(idx, encoding="utf-8") as f:
+        text = f.read()
+    listed = re.findall(r"\{\s*id:\s*'([A-Za-z0-9-]+)'", text)
+    if not listed:
+        fail("could not read the LOCALES table in js/locales/index.js")
+        return
+    for lid in listed:
+        if lid == "en":
+            continue          # English is the source; it needs no catalogue
+        if not os.path.exists(os.path.join(ROOT, "js", "locales", f"{lid}.js")):
+            fail(f"LOCALES lists '{lid}' but js/locales/{lid}.js is missing")
 
 
 def main():
@@ -246,7 +286,8 @@ def main():
     check_reserved_names(files)
     check_unpacked_tree()
     check_assets_present(files)
-    check_fx_registry()
+    check_arcade_registry()
+    check_locales()
     check_no_dev_references(files)
 
     for w in warnings:

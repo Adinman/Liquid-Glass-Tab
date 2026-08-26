@@ -4,6 +4,7 @@ import { S, set } from '../state.js';
 import { head } from './core.js';
 import * as sp from '../spotify.js';
 import { audio, BANDS, BASS_BANDS, VOICE_BAND_LO, VOICE_BAND_HI } from '../audio.js';
+import { t } from '../i18n.js';
 
 /* ============================ SPOTIFY PLAYER ============================ */
 export const spotify = {
@@ -19,9 +20,9 @@ export const spotify = {
       body.append(el('div', { class: 'sp-connect' },
         el('p', { html: msg || 'Connect Spotify to see what’s playing, control playback, and pull synced lyrics.' }),
         el('button', {
-          class: 'btn primary', text: 'Connect Spotify',
+          class: 'btn primary', text: t('Connect Spotify'),
           onclick: async e => {
-            e.target.textContent = 'Connecting…';
+            e.target.textContent = t('Connecting…');
             try { await sp.connect(); toast('Spotify connected'); start(); }
             catch (err) { toast(err.message); renderDisconnected(escapeHtml(err.message)); }
           },
@@ -217,8 +218,8 @@ export const spotify = {
     function paint() {
       const st = sp.playback.raw;
       if (!st || !st.item) {
-        ui.title.textContent = 'Nothing playing';
-        ui.artist.textContent = 'Start Spotify on any device';
+        ui.title.textContent = t('Nothing playing');
+        ui.artist.textContent = t('Start Spotify on any device');
         ui.device.textContent = '';
         ui.art.removeAttribute('src');
         ui.fill.style.width = '0%';
@@ -594,7 +595,7 @@ export const lyrics = {
     }
 
     async function load(track) {
-      if (!track) return empty('Nothing playing.');
+      if (!track) return empty(t('Nothing playing.'));
       const artist = (track.artists || []).map(a => a.name)[0] || '';
       const name = track.name || '';
       const album = track.album?.name || '';
@@ -604,7 +605,7 @@ export const lyrics = {
       lastKey = key;
 
       status.textContent = 'searching…';
-      empty('Looking for lyrics…');
+      empty(t('Looking for lyrics…'));
 
       const q = new URLSearchParams({ artist_name: artist, track_name: name, album_name: album, duration: dur });
       // Cache only the two fields this widget reads. LRCLIB's response carries
@@ -632,7 +633,7 @@ export const lyrics = {
           : res.data;
       }
 
-      if (!data) { status.textContent = 'not found'; return empty('No lyrics found for this track.'); }
+      if (!data) { status.textContent = 'not found'; return empty(t('No lyrics found for this track.')); }
 
       if (data.syncedLyrics) {
         lines = parseLRC(data.syncedLyrics);
@@ -649,7 +650,7 @@ export const lyrics = {
         plain.split('\n').forEach(t => scroll.append(el('div', { class: 'lyr-line near', text: t || ' ' })));
       } else {
         status.textContent = 'instrumental';
-        empty('Instrumental.');
+        empty(t('Instrumental.'));
       }
     }
 
@@ -684,7 +685,7 @@ export const lyrics = {
     const onTrack = e => load(e.detail);
     window.addEventListener('lgt:track', onTrack);
     if (sp.playback.track) load(sp.playback.track);
-    else empty('Connect Spotify to see lyrics.');
+    else empty(t('Connect Spotify to see lyrics.'));
 
     return () => { syncOff(); window.removeEventListener('lgt:track', onTrack); };
   },

@@ -367,13 +367,24 @@ deliberately all-or-nothing per icon — a smooth distance curve there just
 reproduces Magnify.
 
 **Hover scale** drives Magnify, Enlarge and Pop. Everything else is on the same
-tab: position (top/bottom), icon size, icon spacing, labels, auto-hide, max
-items, top-sites append, source folder, and the icon quality/vibrancy/contrast
-controls. New bookmarks go into whichever folder feeds the dock, so if you point
-it at a different folder, **+** follows.
+tab: position, icon size, icon spacing, labels, auto-hide, max items, top-sites
+append, source folder, and the icon quality/vibrancy/contrast controls. New
+bookmarks go into whichever folder feeds the dock, so if you point it at a
+different folder, **+** follows.
+
+**Position** puts the dock on any of the four edges — bottom, top, **left** or
+**right**. On a side the icons stack into a column and everything turns with
+them: labels move beside the icon, the folder flyout opens sideways, the divider
+becomes a horizontal rule, magnified icons grow inward from the wall, and the
+arrow keys run up and down (all four still work either way). Auto-placed widgets
+keep clear of whichever edge it is on.
+
+The magnification is written against the dock's own axis rather than against the
+screen's, so left and right are the same code with the axes swapped rather than
+a second implementation of the same effect.
 
 **Auto-hide** slides the dock off-screen until you push the cursor into a 26px
-strip along that edge.
+strip along that edge — which, on a side dock, is a full-height strip down it.
 
 ### Backgrounds
 
@@ -431,74 +442,116 @@ sound. The animated colour blobs turn themselves off while a video is set so
 they don't veil it. If the file can't be decoded, it hides itself and your
 gradient shows through instead.
 
-### Interactive backgrounds
+### Arcade
 
-**⚙ → Look → Interactive background.** Three things that react to the mouse,
-drawn on a canvas that sits in the wallpaper stack — above the colour blobs,
-below the grain and vignette — so they pick up the blur and refraction of any
-glass panel that overlaps them.
+**⚙ → Arcade.** Three games, drawn on a canvas that sits in the wallpaper stack
+— above the colour blobs, below the grain and vignette — so you play on your own
+wallpaper rather than on a blank screen.
 
-| | What it does |
-|---|---|
-| **Particles** | A field that drifts, gathers toward the cursor, and scatters when you click. **Hold the mouse down** to keep pushing it away |
-| **Light switch** | A switch you can **drag anywhere**. Clicking it brightens the wallpaper and the glass a little; clicking again returns to normal |
-| **Pong** | Endless rally against the computer, launched from the same picker |
-
-Particles and the light switch are backgrounds: pick one and it stays. Pong is a
-game — it takes the screen, fades the widgets and dock down to 7% so you are not
-playing through a news feed, and **Esc** leaves it and puts your background back.
-
-Pong scores a **rally count**, not a scoreline, and keeps an all-time best. That
-is on purpose: first-to-seven has a best score of seven and nothing to chase
-after the first evening, whereas a rally count is one number that can always go
-up. The opponent gets faster and more accurate the longer you last, and your own
-paddle has a speed limit — without one the mouse teleports it and the game
-cannot be lost.
-
-**What it costs.** Measured per frame, drawing at 2× device pixel ratio:
-
-| Scene | 720p | 1080p | 1440p |
+| | What it is | Controls | Scored on |
 |---|---|---|---|
-| Particles | 0.64 ms | 0.98 ms | 0.79 ms |
-| Light switch | 0.11 ms | 0.08 ms | 0.08 ms |
-| Pong | 0.08 ms | 0.11 ms | 0.06 ms |
+| **Game 1** | Clear a grid of mines. Clicking a satisfied number opens its remaining neighbours | Left-click reveals, **right-click flags** | Best **time**, on a win only, per size |
+| **Game 2** | Eat, grow, and don't bite yourself. It speeds up as you go | Arrow keys or WASD | Best **score**, per map size |
+| **Game 3** | Endless rally against the computer. It gets faster and more accurate the longer you last | <kbd>↑</kbd> <kbd>↓</kbd> or W/S | Best **rally** |
 
-The frame budget at 60 Hz is 16.7 ms, so the worst case is about 6% of it.
+**Games 1 and 2 have three sizes each**, picked on a panel beside the board
+**while you are playing** — not in settings. Difficulty is something you change
+between rounds: you finish a board, decide it was too easy, and want the next
+one bigger. Leaving the game to open a settings tab to restart the thing you are
+looking at is the wrong shape for that. Click a row and it deals a fresh game at
+that size.
 
-Particles used to measure 0.24 ms, and the four-fold rise is the price of dots
-big enough to see and an outline pass that keeps them visible on a pale
-wallpaper. On the way there the naive drawing cost about 1.5 ms, nearly all of
-it in roughly 6,000 individual `stroke()` calls for the links; sorting those
-into six opacity buckets and stroking one `Path2D` per bucket cut a third off
-with no visible banding.
-1440p is not worse than 1080p because the particle count is capped at 110 and
-both resolutions hit the cap — the linking pass is O(n²) in particle count, not
-in pixels. The loop is cancelled outright — not merely early-returned — when the
-tab is hidden, when no scene is set, and for the ambient scenes under
-`prefers-reduced-motion`. A reduced-motion scene still gets one static frame, so
-the light switch is visible and usable rather than absent.
+Game 1 calls them **difficulty**, because that is what changes:
 
-The scene code is imported the first time a scene is switched on, so a tab
-belonging to somebody who never enables one never loads any of it.
+| | Board | Mines |
+|---|---|---|
+| Easy | 9×9 | 10 |
+| Medium | 16×16 | 40 |
+| Hard | 30×16 | 99 |
 
-**The light switch does not touch the colour scheme.** An earlier version
-flipped dark/light, which was a far bigger hammer than a switch in the corner of
-the wallpaper should be — it repainted every panel, icon and label on the page.
-It now sets `data-lights` on the root, which `brightness()` on `#wp-image` and
-`#wp-video` reads, and which `applyTheme` uses to lift `--bri` by a fraction of
-the same amount. `brightness()` rather than a white veil: a veil raises the
-black point and washes the picture out, where brightness scales it and keeps the
-contrast. The strength is **⚙ → Look → Brightness when on**, and the glass takes
-about 62% of whatever the wallpaper takes, because matching them makes the panels
-look washed out well before the wallpaper looks bright. With the lights off
-there is no filter on those layers at all, so neither is forced onto its own
-compositing layer for nothing.
+Those are the sizes this genre settled on decades ago; inventing our own would
+make every time incomparable for no gain.
 
-**One limitation worth knowing.** The switch is drawn on the canvas, which sits
-below the widgets — so if a widget covers the switch, the click belongs to the
-widget and there is no way to grab the switch underneath to drag it out. That is
-what **⚙ → Look → Light switch → Reset position** is for; it is the only way
-back from a buried switch.
+Game 2 calls them **map size**, because that is what changes — the map, not the
+speed. They run smallest to largest, which is the order a size list should be
+in; a smaller board *is* harder, but labelling it "Hard" put the list in
+descending order of size and read backwards.
+
+| | Board |
+|---|---|
+| Small | 16×11 |
+| Medium | 24×16 |
+| Large | 32×20 |
+
+**Each level keeps its own record.** A time on 9×9 and a time on 30×16 are not
+the same achievement, and there is only one number per key. The panel shows all
+three at once so the two you are not playing don't disappear, and **⚙ → Arcade**
+lists them too. The panel reserves its width out of the court rather than
+floating over the board — an overlapping click target on a minesweeper is a cell
+you can see but cannot open.
+
+They are named by number on purpose. Each is a version of a game somebody else
+invented, and putting those names in a store listing invites a complaint that
+isn't worth having. Each card in the picker shows a still drawn by the game
+itself, which is also what tells you which is which.
+
+Starting one fades the widgets and dock to 7% so you are not playing through a
+news feed, and takes them out of reach entirely — not just click-through but
+`inert`, so a stray click lands on the game rather than a bookmark and Tab can't
+walk into a dock you cannot see. (`pointer-events: none` on the dock's container
+was not enough on its own: the dock re-enables pointer events on itself, which
+is how auto-hide works, and a parent's `none` does not beat a child's `auto`.)
+**Esc** leaves at any point and your record is kept.
+The settings drawer and the command palette still open over a running game, and
+Escape closes those first — the game only takes the key when nothing else wants
+it.
+
+**Records are read live, never snapshotted at the start of a game.** A copy
+taken then goes stale with nothing to correct it, so a tab that opened a game
+while the record was 0 would still believe that after another tab had set it to
+30, and a run of 1 would beat its own stale copy and overwrite the real record.
+Game 1 is also the one game where **lower is better**, which the score code is
+told explicitly rather than inferring — a single `>` would have quietly refused
+to record any win after the first.
+
+**Game 1's first click is always safe.** Without that, roughly one game in eight
+is over before it has started, which reads as the game being broken rather than
+as bad luck. The mine under the first cell is moved elsewhere rather than the
+board being regenerated, so the count stays exactly right. The board is a fixed
+size rather than one that scales with the window, because a 30×16 board and a
+9×9 board are not the same game and there is only one number to store; the
+*cells* scale instead.
+
+**Game 2's head faces where it is going** — pushed forward out of its cell, with
+white eyes set toward the front and the pupils at the leading edge. That matters
+most at the moment it stops mattering to the game: when you have just died and
+are looking at a still frame working out what happened. Two dark dots barely off
+centre, on a body of one flat colour, left the head indistinguishable from the
+tail.
+
+**Game 2 is drawn as one connected body**, stroked along the cell centres with
+round joins rather than one rounded square per cell — the per-cell version left
+a seam at every join and a stack of separate tiles at a corner, so it read as a
+queue of blocks rather than one animal. Its board is a checkerboard rather than
+a hairline grid: 1px lines at 5.5% white were very close to invisible on a
+bright wallpaper, and knowing how far the next cell is is most of what makes the
+game readable.
+
+**Game 2 moves on a fixed tick, not per frame.** Tying movement to the frame
+rate would make it about twice as hard on a 144 Hz monitor as on a 60 Hz one.
+Measured time-to-wall: 1433 ms at 60 Hz, 1430 ms at 144 Hz, 1433 ms at 30 Hz.
+Turns are queued rather than applied immediately, so a fast two-key corner does
+what you meant instead of dropping one of the presses.
+
+Nothing runs unless a game is running: the loop is cancelled outright — not
+merely early-returned — when the tab is hidden or no game is on, and the canvas
+backing store is freed to zero rather than merely hidden. The game code is
+imported the first time you open the Arcade tab or start a game, so a tab
+belonging to somebody who never plays never loads any of it.
+
+**Reduced motion is deliberately not consulted here.** A game is not decoration
+— it doesn't start until you press a button, and freezing it would be a broken
+game rather than a calmer page.
 
 ### Icon quality
 
@@ -543,6 +596,59 @@ as you want. It offers two kinds:
 
 The first homescreen is seeded from whatever folder the dock already used, so an
 existing setup keeps working and simply gains a name.
+
+### Language
+
+**⚙ → Look → Language.** The interface speaks Spanish, Hindi, Indonesian,
+Korean, Russian and Simplified Chinese, as well as English. It defaults to
+**Auto**, which follows your browser — it walks `navigator.languages` in
+preference order and takes the first one there is a catalogue for, rather than
+only looking at the first entry.
+
+Everything the app writes is translated: the settings drawer, every widget
+(headers, greetings, weather descriptions, the focus timer, the Spotify and
+lyrics states), the dock, the arcade, and the toasts.
+
+Each language is written to be **friendly and respectful**, which for several of
+them is a real decision rather than a default:
+
+| | Register |
+|---|---|
+| **한국어** | 해요체 throughout — the polite everyday form for someone older than you. Not 반말, and not 하십시오체, which reads like an airport announcement |
+| **Español** | Infinitives for actions (*Buscar ajustes…*), which is what Spanish interfaces do and which avoids answering tú/usted wrongly for half the Spanish-speaking world. Vocabulary neutral between Spain and Latin America |
+| **हिन्दी** | आप and -करें forms; never तुम |
+| **Русский** | Infinitives and impersonal confirmations — no ты, and no canned «Вы» in every line |
+| **简体中文** | 请 for requests, neutral statements for confirmations |
+| **Bahasa Indonesia** | Plain verbs, avoiding both over-familiar *kamu* and stiff repeated *Anda* |
+
+**The English text is the key.** `t('Backdrop blur')` looks that string up and
+hands back the original if it is missing, so the code still reads as what it
+renders, there is no English catalogue to keep in step, and an untranslated
+string degrades to English rather than to a blank label or a raw
+`settings.glass.blur` on screen. Proper nouns that should not be translated —
+`Client ID`, `Redirect URI` — simply have no entry.
+
+Two traps this shape avoids, both of which bit during the work:
+
+- **Module-level tables cannot be translated where they are declared.** The
+  weather-code table and the widget definitions are evaluated at import time,
+  long before a catalogue is loaded, so translating them in place would freeze
+  whichever language happened to be active then. They stay English and are
+  translated at the point of use.
+- **Static markup needs its key kept separately.** The settings header and the
+  search box carry a `data-i18n` attribute holding the English, because after
+  one language switch the element itself holds Korean — and translating
+  Korean-as-a-key finds nothing.
+
+Catalogues are loaded on demand, so a tab running in English fetches none of
+them. Adding a language is two files: `js/locales/<id>.js` and one line in
+`js/locales/index.js`. `package.py` fails the build if a language is listed
+without its catalogue.
+
+Chrome's own `_locales` mechanism is deliberately not used: it supports only a
+fixed list of locales — which excludes most Indian languages — and it ties the
+interface language to the browser's, so nobody could choose Korean on an
+English Chrome.
 
 ### Searching settings
 
@@ -594,10 +700,8 @@ visualizer, because motion *is* what that widget is, and a live video
 wallpaper, because you chose it and pointed it at a file. Both have their own
 off switches.
 
-An **interactive background** stops too: Particles paints one still frame and
-then holds it. The light switch is treated differently, because it is a control
-rather than decoration — it still repaints so that hovering and clicking it
-visibly do something, but it snaps between states instead of easing.
+The **arcade** is the deliberate exception: a game only runs because you started
+it, so it is left alone.
 
 **Keyboard.** The dock is a single Tab stop with arrow-key navigation inside
 it, which is the standard toolbar pattern:
@@ -760,9 +864,11 @@ js/theme.js          settings → CSS vars, wallpaper resolution
 js/media.js          IndexedDB blob store (wallpaper image + video)
 js/audio.js          spectrum engine (mic FFT + simulated)
 js/spotify.js        PKCE auth + Web API client
-js/dock.js           bookmark dock
+js/dock.js           bookmark dock + bulk bookmark import
 js/palette.js        command palette
 js/settings.js       settings drawer
+js/arcade.js         the game host: canvas, loop, input
+js/games/            one module per game
 js/widgets/          one module per widget group
 ```
 
