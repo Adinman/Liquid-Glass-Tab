@@ -225,11 +225,11 @@ export const spotify = {
         ui.fill.style.width = '0%';
         return;
       }
-      const t = st.item;
-      ui.title.textContent = t.name;
-      ui.artist.textContent = (t.artists || []).map(a => a.name).join(', ') || t.show?.name || '';
+      const item = st.item;
+      ui.title.textContent = item.name;
+      ui.artist.textContent = (item.artists || []).map(a => a.name).join(', ') || item.show?.name || '';
       ui.device.textContent = st.device ? `${st.device.name} · ${st.device.type}` : '';
-      const art = t.album?.images?.[0]?.url || t.images?.[0]?.url;
+      const art = item.album?.images?.[0]?.url || item.images?.[0]?.url;
       if (art && ui.art.src !== art) ui.art.src = art;
       setIcon(ui.play, st.is_playing ? PAUSE : PLAY, { size: SIZE.play, filled: true });
       ui.shuffle.classList.toggle('on', !!st.shuffle_state);
@@ -285,14 +285,22 @@ export const spotify = {
     };
     const onErr = e => { if (e.detail?.message === 'NOT_CONNECTED') renderDisconnected(); };
 
+    // Torn down while the connection check is still in flight? Then start()
+    // must not run: the cleanup below has already been and gone, and it clears
+    // offState/offTrack — which start() had not yet assigned — so the listeners
+    // it adds to the sp.playback SINGLETON would never be removed, and its rAF
+    // loop would run for the life of the tab against a detached panel.
+    let torn = false;
     (async () => {
-      if (await sp.isConnected()) start();
+      if (torn) return;
+      if (await sp.isConnected()) { if (!torn) start(); }
       else if (!S.spotifyClientId)
         renderDisconnected('Spotify isn’t set up yet. Add your <b>Client ID</b> in Settings → Music, then connect.');
       else renderDisconnected();
     })();
 
     return () => {
+      torn = true;
       cancelAnimationFrame(raf); raf = null;
       sp.playback.stop();
       offState?.(); offTrack?.();
@@ -386,7 +394,18 @@ export const visualizer = {
       return n ? sum / n : 0;
     }
 
+    // Low performance mode halves the visualiser rather than switching it off.
+    // It is a widget somebody deliberately turned on, so silently blanking it
+    // would read as a bug; at 30fps it still tracks the music, and the canvas
+    // work — a full clear and a redraw of every bar — happens half as often.
+    let lastDraw = 0;
     function draw() {
+      raf = requestAnimationFrame(draw);
+      if (S.lowPerf) {
+        const now = performance.now();
+        if (now - lastDraw < 32) return;
+        lastDraw = now;
+      }
       ensureSize();
       audio.bpm = S.vizBpm || 120;
       audio.sensitivity = (S.vizSensitivity ?? 100) / 100;
@@ -402,8 +421,6 @@ export const visualizer = {
       const accent = currentAccent();
       if (S.vizMode === 'radial') drawRadial(d, w, h, accent);
       else drawBars(d, w, h, accent);
-
-      raf = requestAnimationFrame(draw);
     }
 
     function drawBars(d, w, h, accent) {
@@ -463,10 +480,10 @@ export const visualizer = {
        *  they get louder. Previously the flank ran outward through everything
        *  above 215Hz up to 16kHz, so the silent top of that range occupied the
        *  outermost bars and the vocals never touched the edge. */
-      const tToBand = t => {
-        if (!split) return t * BANDS;                       // plain full spectrum
-        if (t <= core) return core > 0.001 ? (t / core) * BASS_BANDS : 0;
-        const u = (1 - t) / Math.max(0.001, 1 - core);      // 0 at the edge, 1 at the split
+      const tToBand = pos => {
+        if (!split) return pos * BANDS;                     // plain full spectrum
+        if (pos <= core) return core > 0.001 ? (pos / core) * BASS_BANDS : 0;
+        const u = (1 - pos) / Math.max(0.001, 1 - core);    // 0 at the edge, 1 at the split
         return VOICE_BAND_LO + u * (VOICE_BAND_HI - VOICE_BAND_LO);
       };
 
@@ -647,7 +664,7 @@ export const lyrics = {
         status.textContent = 'unsynced';
         syncOff();                      // no timestamps to follow
         scroll.innerHTML = '';
-        plain.split('\n').forEach(t => scroll.append(el('div', { class: 'lyr-line near', text: t || ' ' })));
+        plain.split('\n').forEach(line => scroll.append(el('div', { class: 'lyr-line near', text: line || ' ' })));
       } else {
         status.textContent = 'instrumental';
         empty(t('Instrumental.'));
@@ -661,9 +678,9 @@ export const lyrics = {
     // 10/s is indistinguishable and does a sixth of the work.
     function frame() {
       if (!lines.length) return;
-      const t = sp.playback.progress + (S.lyricsOffset || 0);
+      const at = sp.playback.progress + (S.lyricsOffset || 0);
       let idx = -1;
-      for (let i = 0; i < lines.length; i++) { if (lines[i].t <= t) idx = i; else break; }
+      for (let i = 0; i < lines.length; i++) { if (lines[i].t <= at) idx = i; else break; }
       if (idx === current) return;
 
       current = idx;

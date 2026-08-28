@@ -1,0 +1,105 @@
+/* ============================================================
+   Low performance mode  —  :root[data-perf="low"]
+
+   Loaded last so it can override the material without any of the rules below
+   needing !important. Everything here is switched by one attribute, set from
+   applyTheme(), and nothing here writes to settings: the user's blur, sheen,
+   hover effect and animated background are all left exactly as they were, and
+   come back untouched when the mode is turned off.
+
+   What it turns off, in the order the cost was found:
+
+   1. The drifting mesh. Four blobs 46vw across under `filter: blur(70px)`,
+      animating forever. On its own that is a full-screen blurred layer being
+      recomposited every frame — but the real cost is second-order, because
+      every .glass panel's backdrop-filter samples what is behind it, so a
+      wallpaper that never stops moving forces every panel to re-run its own
+      blur every frame too. The two multiply. Stopping the drift is the single
+      biggest saving here and it costs the least to look at, because the mesh
+      is still there, just still.
+
+   2. The panels' own backdrop-filter, which is per-panel and per-frame.
+
+   3. The live wallpaper, handled in theme.js rather than here: a clip is a
+      continuously decoding video sitting underneath all of the above.
+
+   The look this leaves is deliberately flat rather than broken — solid panels,
+   a static background, hard edges. It should read as a plainer theme, not as a
+   page that failed to load.
+   ============================================================ */
+
+:root {
+  /* Panels stop being glass, so they need a colour of their own. The tint
+     alone cannot do it: it is white at 10%, which is legible only because a
+     blurred, darkened wallpaper sits behind it. Raise that alpha with the blur
+     gone and you get a white panel under white text. */
+  --perf-panel: rgba(17, 19, 29, .82);
+  --perf-edge: rgba(255, 255, 255, .13);
+}
+:root[data-scheme="light"] {
+  --perf-panel: rgba(247, 248, 251, .88);
+  --perf-edge: rgba(20, 22, 40, .12);
+}
+
+/* ---------- 1. the background stops moving ---------- */
+/* data-animate is already forced to "off" by applyTheme in this mode, which
+   covers .blob. This catches the rest: anything that loops forever costs the
+   compositor a frame every frame, whether or not anyone is looking at it. */
+:root[data-perf="low"] :is(.blob, #wp-mesh) { animation: none !important; }
+:root[data-perf="low"][data-edit="on"] .widget::before { animation: none !important; }
+
+/* ---------- 2. panels stop being glass ---------- */
+:root[data-perf="low"] .glass::before {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  /* The element is what the blur lived on. With no filter it has no job, and
+     leaving it in place still gives the compositor a layer to consider. */
+  display: none;
+}
+:root[data-perf="low"] .glass {
+  background: var(--perf-panel);
+  /* A 50px shadow is a large blurred surface per panel. Tighter and darker
+     reads the same at a glance for a fraction of the area. */
+  box-shadow: 0 6px 16px rgba(0, 0, 0, .34);
+  border: 1px solid var(--perf-edge);
+}
+/* The rim is a masked gradient composited with mask-composite: exclude, one
+   per panel. The border above says the same thing for nothing. */
+:root[data-perf="low"] .glass::after { display: none; }
+
+/* The sheen is a radial gradient that fades in under the pointer. applyTheme
+   already sets data-sheen="off", which hides it; this is here so the rule
+   holds even if that attribute is ever set from somewhere else. */
+:root[data-perf="low"] .sheen { display: none; }
+
+/* ---------- 3. entrances and transitions ---------- */
+/* One-shot animations are cheap in isolation, but they all fire at once on a
+   page that has just opened — which is exactly the moment a slow machine is
+   already busy decoding a wallpaper and laying out every widget. */
+:root[data-perf="low"] :is(.widget, #settings, #palette, #palette-overlay, #toast) {
+  animation: none;
+}
+
+/* The dock's magnify loop is stopped in dock.js, not here — it is a rAF loop
+   writing transforms, so CSS cannot switch it off. This only covers the
+   hover styling that would otherwise still transition. */
+:root[data-perf="low"] .dock-item { transition: none; }
+:root[data-perf="low"] .dock-item .label { transition: opacity .12s linear; }
+
+/* Everything else keeps its transitions: they are short, they only run on
+   interaction, and removing them makes the interface feel broken rather than
+   fast. prefers-reduced-motion in base.css is the setting for that, and it is
+   a different question from this one. */
+
+/* ---------- 4. the two panels that are not .glass ---------- */
+/* The toast and the countdown editor carry their own backdrop-filter rather
+   than using the glass material, so nothing above reaches them. Both are only
+   on screen briefly — but a mode that says "no frosted panels" should not
+   leave two behind, and both already sit on a background solid enough (72%
+   and 86%) to read without the blur. The toast is nudged the rest of the way
+   because it is the one that appears over an arbitrary wallpaper. */
+:root[data-perf="low"] :is(#toast, .count-edit) {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+:root[data-perf="low"] #toast { background: rgba(10, 12, 20, .92); }

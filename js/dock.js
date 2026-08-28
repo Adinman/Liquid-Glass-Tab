@@ -1,5 +1,6 @@
 // The bookmark hotbar: a liquid-glass dock with macOS-style magnification,
-// folder flyouts, and drag-to-reorder that writes back to real bookmarks.
+// folder flyouts, and pick-up-and-drop reordering that writes back to real
+// bookmarks.
 import { $, el, hostOf, toast, clamp, debounce, openIncognito } from './util.js';
 import { iconElement } from './icons.js';
 import { activeFolder } from './spaces.js';
@@ -33,7 +34,6 @@ const flyout = () => $('#dock-flyout');
 const popover = () => $('#dock-popover');
 
 let nodes = [];      // bookmark nodes currently rendered
-let dragId = null;
 
 export async function initDock() {
   await renderDock();
@@ -72,7 +72,6 @@ export async function initDock() {
 
   // Dropping a link from another tab (or any dragged URL) onto the dock adds it.
   dock().addEventListener('dragover', e => {
-    if (dragId) return;                                   // internal reorder, not an add
     if (e.dataTransfer.types.some(t => t === 'text/uri-list' || t === 'text/plain')) {
       e.preventDefault();
       dock().classList.add('drop-add');
@@ -81,12 +80,23 @@ export async function initDock() {
   dock().addEventListener('dragleave', () => dock().classList.remove('drop-add'));
   dock().addEventListener('drop', async e => {
     dock().classList.remove('drop-add');
-    if (dragId) return;
     e.preventDefault();
     const raw = (e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain') || '')
       .split('\n')[0].trim();
     if (raw) await addBookmark(raw);
   });
+
+  // Letting go of a dragged icon is a pointerup over that icon, and the browser
+  // follows every one of those with a click. Capture phase, so it is stopped
+  // before anything downstream reads it as "open this bookmark". Narrowed to
+  // clicks on the dock so that a drop cannot eat one meant for the page.
+  window.addEventListener('click', e => {
+    if (!justDragged()) return;
+    const path = e.composedPath?.() || [];
+    if (!path.some(n => n?.nodeType === 1 && n.matches?.('.dock-item'))) return;
+    e.preventDefault();
+    e.stopPropagation();
+  }, true);
 
   applyDockSettings();
 }
@@ -112,6 +122,20 @@ async function readFolder(id) {
 }
 
 export async function renderDock() {
+  // Captured before the row is torn down, so focus can be handed back to the
+  // same position afterwards rather than falling to <body>.
+  const focusedAt = dockItemEls().indexOf(document.activeElement);
+  // A rebuild during a drag pulls the dragged icon out of the document. Pointer
+  // capture is then released implicitly, so the pointerup never reaches the
+  // handler that would end the drag — it lands on a freshly built element whose
+  // own handler rejects it by identity. drag.active would stay true for the life
+  // of the tab: every later drag refused, and the magnify loop dead, because
+  // both startAnim and tick bail on that flag.
+  //
+  // Bookmarks change under us for ordinary reasons — another window, a sync, an
+  // import — so this is not a corner case. Deferring is right rather than
+  // dropping: whatever changed still needs drawing once the drag is done.
+  if (drag.active) { drag.pendingRender = true; return; }
   const wrap = itemsEl();
   nodes = await readFolder(activeFolder());
   nodes = nodes.slice(0, S.dockMaxItems || 24);
@@ -138,7 +162,7 @@ export async function renderDock() {
   wrap.append(addBtn);
   wrap.append(buildAction('⚙', 'Settings', () => window.dispatchEvent(new Event('lgt:settings'))));
   attachSheen(dock());
-  armDockKeyboard();             // the row was just rebuilt, so re-arm the tab stop
+  armDockKeyboard(focusedAt);    // the row was just rebuilt, so re-arm the tab stop
   invalidateDockAnim();          // item count/positions just changed
 }
 
@@ -148,7 +172,6 @@ function buildItem(node, readOnly = false) {
   const item = el('div', {
     class: 'dock-item' + (isFolder ? ' folder' : ''),
     title: name,
-    draggable: !readOnly && !String(node.id).startsWith('top:'),
     dataset: { id: node.id },
     // The dock is a role="toolbar", so its items are buttons reached with the
     // arrow keys rather than Tab — one stop for the whole dock. tabindex is
@@ -166,6 +189,12 @@ function buildItem(node, readOnly = false) {
   item.append(el('div', { class: 'label', text: node.title || hostOf(node.url || '') }));
 
   item.addEventListener('click', e => {
+    // Belt and braces with the window-level guard in initDock, and not
+    // redundant: a committed drop re-renders the row, which detaches the icon
+    // the pointer was released over. A click dispatched at a node that is no
+    // longer in the document runs that node's own listeners and then stops —
+    // it never reaches window, so only this one is in a position to refuse it.
+    if (justDragged()) return;
     if (isFolder) { e.stopPropagation(); openFlyout(node, item); return; }
     const url = httpOnly(node.url);
     if (!url) return toast('That bookmark isn’t a web address, so it can’t be opened here.');
@@ -177,39 +206,15 @@ function buildItem(node, readOnly = false) {
     if (e.button === 1 && url) { e.preventDefault(); chrome.tabs.create({ url, active: false }); }
   });
   item.addEventListener('contextmenu', e => {
+    // Mid-drag the press is holding an icon, not asking about it.
+    if (drag.active) { e.preventDefault(); return; }
     if (!node.url || readOnly || String(node.id).startsWith('top:')) return;
     e.preventDefault();
     openBookmarkForm(item, node);        // edit / copy / delete
   });
 
-  // drag to reorder
-  item.addEventListener('dragstart', e => {
-    dragId = node.id;
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', node.id);
-  });
-  item.addEventListener('dragover', e => {
-    if (!dragId || dragId === node.id) return;
-    e.preventDefault();
-    item.classList.add('drop-target');
-  });
-  item.addEventListener('dragleave', () => item.classList.remove('drop-target'));
-  item.addEventListener('drop', async e => {
-    e.preventDefault();
-    // Must not reach the dock's drop handler, which would read the dragged
-    // bookmark id as if it were a dropped URL.
-    e.stopPropagation();
-    item.classList.remove('drop-target');
-    if (!dragId || dragId === node.id) return;
-    const index = nodes.findIndex(n => n.id === node.id);
-    try {
-      await chrome.bookmarks.move(dragId, { parentId: node.parentId, index });
-      toast('Bookmark moved');
-      await renderDock();
-    } catch { toast('Could not move that bookmark'); }
-  });
-  // Cleared here rather than in drop: dragend always fires, drop may not.
-  item.addEventListener('dragend', () => { dragId = null; });
+  // Top sites are not bookmarks and have nowhere to be moved to.
+  if (!readOnly && !String(node.id).startsWith('top:')) armReorder(item, node);
 
   return item;
 }
@@ -237,10 +242,18 @@ function focusDockItem(items, i) {
 }
 
 /** Give exactly one item a real tab stop, so the dock is reachable. */
-export function armDockKeyboard() {
+export function armDockKeyboard(refocusIndex = -1) {
   const items = dockItemEls();
   if (!items.length) return;
   if (!items.some(it => it.tabIndex === 0)) items[0].tabIndex = 0;
+  // A rebuild throws away the element that had focus, and focus then falls to
+  // <body> — so for anyone driving the dock from the keyboard, any bookmark
+  // change anywhere in the browser silently ends their navigation. Putting it
+  // back on the same position keeps the row usable; the index is clamped
+  // because the row may have got shorter.
+  if (refocusIndex < 0) return;
+  const at = items[Math.min(refocusIndex, items.length - 1)];
+  if (at) { for (const it of items) it.tabIndex = it === at ? 0 : -1; at.focus(); }
 }
 
 function onDockKeydown(e) {
@@ -346,6 +359,9 @@ function measureBase() {
 export function invalidateDockAnim() { anim.dirty = true; }
 
 function startAnim() {
+  // A drag owns .dock-item transforms until it ends; two writers would fight
+  // over them a frame at a time.
+  if (drag.active) return;
   if (!anim.raf) { anim.last = performance.now(); anim.raf = requestAnimationFrame(tick); }
 }
 
@@ -378,7 +394,11 @@ const reducedMotion = () =>
 
 function tick(now) {
   anim.raf = 0;
-  const mode = reducedMotion() ? 'none' : (S.dockHover || 'magnify');
+  if (drag.active) return;                 // see startAnim
+  // Low performance mode lands here rather than on the attribute alone: this
+  // is a rAF loop writing a transform to every icon every frame, and 'none' is
+  // the branch that stops scheduling the next one.
+  const mode = (reducedMotion() || S.lowPerf) ? 'none' : (S.dockHover || 'magnify');
   const eff = EFFECTS[mode] || EFFECTS.magnify;
 
   if (mode === 'none') { resetItems(); return; }
@@ -560,17 +580,233 @@ function tick(now) {
     anim.pad = pad;
   }
 
-  if (busy || px != null) anim.raf = requestAnimationFrame(tick);
-  else { resetItems(); anim.hovered = -1; }
+  // Three states, not two. `busy` means something is still easing, so keep
+  // going. Once everything has settled the loop has nothing left to compute:
+  // with the pointer still over the dock it must stop scheduling but KEEP the
+  // magnified transforms, and only once the pointer leaves may it reset them.
+  // Resting a cursor on the dock used to hold a 60fps loop open indefinitely
+  // writing the same values, which on a laptop is the fan coming on for nothing.
+  if (busy) anim.raf = requestAnimationFrame(tick);
+  else if (px == null) { resetItems(); anim.hovered = -1; }
 }
 
 function onDockPointerMove(e) {
+  if (drag.active) return;
   // The coordinate along the dock's own axis; the other one is irrelevant to
   // proximity, which is what makes the whole loop one-dimensional.
-  anim.pointerMain = isVertical() ? e.clientY : e.clientX;
+  anim.pointerMain = mainAxis(e);
   startAnim();
 }
 function onDockPointerLeave() { anim.pointerMain = null; startAnim(); }
+
+/* ---------------- drag to reorder ----------------
+   Pointer-driven rather than HTML5 drag-and-drop, which is what this replaces.
+   Three things went wrong with the native API, and all three are the same
+   shape: it only ever reports which element the pointer is over.
+
+   That means a drop can only mean "before this icon". There was no way to reach
+   the position after the last one — dropping on it put you in front of it — so
+   the one place you could not ask for was the end of the row, which is where
+   most people want a bookmark they just added.
+
+   It also means no preview. A dashed outline said which icon you were over, not
+   where the icon in your hand would land, so reordering was a guess followed by
+   a check.
+
+   And its drag image is a snapshot taken at dragstart. The icon under the
+   cursor is always mid-magnification at that moment, so what you dragged around
+   was a frozen half-scaled icon that then stayed that size.
+
+   Pointer events fix all three, and cover the vertical edges and touch without a
+   second implementation — which matters now that the dock has four edges. */
+
+const DRAG_SLOP = 5;      // px of travel before a press counts as a drag
+const DRAG_LIFT = 10;     // px the held icon rises away from the dock's edge
+
+const drag = {
+  active: false,          // past the slop, and owning transforms
+  id: null, parentId: null, el: null, pointerId: -1,
+  from: -1,               // where the held icon started
+  slot: -1,               // where it would land if dropped now
+  items: [], base: [],    // the reorderable icons, and their resting centres
+  flow: 1,                // +1 if the row runs the way the axis counts up
+  start: 0,               // pointer position along the main axis at the press
+  endedAt: 0,             // when the last drop happened; see justDragged
+  pendingRender: false,   // a bookmark change arrived mid-drag; draw it after
+};
+
+// A drop is followed by a click that must not count. This is a timestamp rather
+// than a flag because two guards read it — one on window, one on the item — and
+// whichever ran first would clear a flag out from under the other. The window is
+// short enough that a click the user actually meant cannot fall inside it: it
+// would have to be a second press and release within a third of a second, and a
+// press resets this anyway.
+const DRAG_CLICK_MS = 350;
+const justDragged = () => drag.endedAt > 0 && performance.now() - drag.endedAt < DRAG_CLICK_MS;
+
+const mainAxis = e => (isVertical() ? e.clientY : e.clientX);
+
+/** A translation along the dock's own axis, whichever one that is. */
+const along = d => `translate(${isVertical() ? 0 : d}px, ${isVertical() ? d : 0}px)`;
+
+function armReorder(item, node) {
+  item.addEventListener('pointerdown', e => {
+    if (e.button !== 0 || drag.active) return;
+    // Not a drag yet. A press that never travels is still a click, and one
+    // click opening a bookmark is the whole point of the dock.
+    drag.id = node.id;
+    drag.parentId = node.parentId || activeFolder();
+    drag.el = item;
+    drag.start = mainAxis(e);
+    drag.endedAt = 0;
+    // Captured from the press rather than from the threshold: without it the
+    // pointer can leave a 48px icon between two moves and the drag is dropped.
+    try { item.setPointerCapture(e.pointerId); } catch {}
+    drag.pointerId = e.pointerId;
+  });
+
+  item.addEventListener('pointermove', e => {
+    if (drag.el !== item || e.pointerId !== drag.pointerId) return;
+    const at = mainAxis(e);
+    if (!drag.active) {
+      if (Math.abs(at - drag.start) < DRAG_SLOP) return;
+      if (!beginDrag()) { drag.el = null; return; }
+    }
+    moveDrag(at);
+  });
+
+  const up = ok => e => {
+    if (drag.el !== item || e.pointerId !== drag.pointerId) return;
+    endDrag(ok);
+  };
+  item.addEventListener('pointerup', up(true));
+  item.addEventListener('pointercancel', up(false));
+  // The browser releases capture on its own if the element leaves the document,
+  // and then neither of the two above will ever fire on it. Without this the
+  // drag would have no way to end. Guarded on drag.active because releasing
+  // capture deliberately, at the end of a normal drop, fires this too.
+  item.addEventListener('lostpointercapture', () => {
+    if (drag.active && drag.el === item) endDrag(false);
+  });
+}
+
+function beginDrag() {
+  const row = itemsEl();
+  const from = nodes.findIndex(n => n.id === drag.id);
+  const items = nodes.map(n => row.querySelector(`.dock-item[data-id="${CSS.escape(n.id)}"]`));
+  // A row that changed under the press, or a single icon: nothing to reorder.
+  if (from < 0 || items.length < 2 || items.some(x => !x)) return false;
+
+  // Clearing first is not tidying. The magnify loop leaves scale and offset on
+  // whatever the pointer passed over on its way here, and measuring that would
+  // put every resting centre somewhere the icon does not rest.
+  resetItems();
+  const vert = isVertical();
+  drag.base = items.map(it => {
+    const r = it.getBoundingClientRect();
+    return vert ? r.top + r.height / 2 : r.left + r.width / 2;
+  });
+  // Right-to-left lays a horizontal dock out backwards, so the first bookmark
+  // has the largest x. Everything below asks "is this one earlier in the row",
+  // which is the opposite comparison in that case.
+  drag.flow = drag.base[drag.base.length - 1] >= drag.base[0] ? 1 : -1;
+  drag.items = items;
+  drag.from = drag.slot = from;
+  drag.active = true;
+  zone().dataset.dragging = 'true';
+  drag.el.classList.add('dragging');
+  return true;
+}
+
+function moveDrag(at) {
+  const d = at - drag.start;
+  const g = geom();
+  const x = (g.vertical ? 0 : d) + g.outX * DRAG_LIFT;
+  const y = (g.vertical ? d : 0) + g.outY * DRAG_LIFT;
+  drag.el.style.transform = `translate(${x}px, ${y}px) scale(1.12)`;
+
+  // Where it would land: how many of the others it has been carried past. That
+  // counts gaps rather than hit-testing icons, which is what makes both ends of
+  // the row reachable — past the last centre is simply one slot further on.
+  const c = drag.base[drag.from] + d;
+  let slot = 0;
+  for (let i = 0; i < drag.base.length; i++) {
+    if (i !== drag.from && drag.flow * (drag.base[i] - c) < 0) slot++;
+  }
+  if (slot === drag.slot) return;
+  drag.slot = slot;
+  layoutGap();
+}
+
+/** Put every other icon where it would sit if the drop happened now, so the gap
+ *  under the cursor is the answer rather than a guess about it. */
+function layoutGap() {
+  for (let i = 0; i < drag.items.length; i++) {
+    if (i === drag.from) continue;
+    const j = i < drag.from ? i : i - 1;       // its index among the others
+    const to = j < drag.slot ? j : j + 1;      // ...and the slot that leaves it
+    const d = drag.base[to] - drag.base[i];
+    drag.items[i].style.transform = d ? along(d) : '';
+  }
+}
+
+async function endDrag(commit) {
+  const { el: item, active, slot, from, id, parentId, pointerId } = drag;
+  // Cleared BEFORE the capture is released, not after. Releasing fires
+  // lostpointercapture, which is now listened for — the spec queues that as a
+  // task, but if it ever arrived synchronously this function would re-enter
+  // itself. Clearing first makes the listener's `drag.el === item` guard false
+  // either way, so the ordering is not something to depend on.
+  drag.pointerId = -1;
+  drag.el = null;
+  drag.id = null;
+  if (item && pointerId >= 0) {
+    try { item.releasePointerCapture(pointerId); } catch {}
+  }
+  if (!active) return;                        // a plain click; nothing was moved
+  drag.active = false;
+  drag.endedAt = performance.now();
+  item.classList.remove('dragging');          // ...which hands it the transition
+
+  const landed = commit && slot !== from;
+  // Into the gap, not back home. The write to the bookmarks API takes a moment
+  // to come back, and without this the icon returns to where it started and
+  // then jumps to its new place once it does.
+  item.style.transform = landed ? along(drag.base[slot] - drag.base[from]) : '';
+  if (!landed) for (const it of drag.items) it.style.transform = '';
+
+  if (landed) {
+    try {
+      // The index is into the row as it stands now, the icon being moved
+      // included: chrome.bookmarks.move compensates for its own removal itself.
+      // So this is the gap it was dropped into, counted before anything moves,
+      // and it is allowed to be one past the last icon.
+      await chrome.bookmarks.move(id, { parentId, index: slot >= from ? slot + 1 : slot });
+    } catch { toast('Could not move that bookmark'); }
+    // onMoved rebuilds too, but only after its debounce, and until then the row
+    // is holding a layout that describes an order it no longer has.
+    await renderDock();
+  }
+
+  // The icons that did not move are gliding home; ending the drag now would cut
+  // that off, because the transition only exists while the attribute does.
+  // Held the whole row of icons, which after a commit are detached nodes the
+  // module then kept alive until the next drag.
+  drag.items = [];
+  drag.base = [];
+
+  // A bookmark change that arrived mid-drag was deferred rather than dropped.
+  if (drag.pendingRender) { drag.pendingRender = false; if (!landed) await renderDock(); }
+
+  // The icons that did not move are gliding home; ending the drag now would cut
+  // that off, because the transition only exists while the attribute does.
+  setTimeout(() => {
+    if (drag.active) return;                  // another drag already started
+    delete zone().dataset.dragging;
+    resetItems();
+    invalidateDockAnim();
+  }, landed ? 0 : 200);
+}
 
 /* ---------- folder flyout ---------- */
 async function openFlyout(node, anchor) {

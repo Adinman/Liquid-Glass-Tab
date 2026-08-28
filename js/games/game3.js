@@ -19,7 +19,9 @@
  * collection — dt is capped at 50 ms and a single move of that size would carry
  * the ball clean through a paddle.
  */
-import { recordScore, bestScore } from '../state.js';
+import { recordScore, bestScore, levelFor } from '../state.js';
+import { t } from '../i18n.js';
+import { createLevels, reserved } from './levels.js';
 
 const PADDLE_H = 0.17;       // of court height
 const PADDLE_W = 12;         // px
@@ -30,6 +32,7 @@ const SPEED_STEP = 0.19;     // added per return
 const MAX_SPEED = 19;
 const PLAYER_SPEED = 12.5;   // px per 60th; the whole difficulty of the game
 const SERVE_DELAY = 750;     // ms
+const MATCH_POINTS = 7;      // two-player mode only; see below
 
 export const game3 = {
   id: 'game3',
@@ -69,9 +72,27 @@ export const game3 = {
     let state = 'ready';               // ready | play | over
     let wait = SERVE_DELAY;
     let rally = 0;
+
+    /* Which opponent, fixed for the life of the instance. Switching deals a
+       fresh game, so a rally always finishes under the rules it started with
+       and files against the right record. */
+    let mode = levelFor('game3').id;   // 'ai' | 'friend'
+    let KEY = `game3.${mode}`;
+    const vsFriend = () => mode === 'friend';
+
+    // Two-player scoring. The one-player game is an endless rally and stays
+    // that way — a rally count is a single number that can always go up, which
+    // is what makes an all-time record worth chasing. Two people at one
+    // keyboard want to beat each other rather than a number, so that mode is a
+    // match to MATCH_POINTS, and what it files as a record is the longest rally
+    // of the match: a measure of the two of you rather than of one.
+    let ptsL = 0, ptsR = 0;
+    let bestRally = 0;                 // longest rally this match
+    let winner = '';                   // 'left' | 'right', two-player only
+
     // Read live, never snapshotted — see the note on recordScore in
     // js/state.js for what a stale copy did to this game's record.
-    const record = () => bestScore('game3');
+    const record = () => bestScore(KEY);
     let beat = false;                  // this run passed the old record
     let flash = 0;                     // ms of impact flash left
     let over = 0;                      // ms since the game ended
@@ -83,14 +104,28 @@ export const game3 = {
     function metrics() {
       W = host.W; H = host.H;
       you.h = cpu.h = Math.max(54, H * PADDLE_H);
+      picker.layout(host);
     }
+
+    const picker = createLevels('game3', 'opponent', () => {
+      mode = levelFor('game3').id;
+      KEY = `game3.${mode}`;
+      restart();
+      metrics();
+    });
 
     function centre() {
       you.y = cpu.y = H / 2;
     }
 
+    /* The left edge of the playable court. The opponent picker reserves its
+       width down the left-hand side exactly as it does in the other two games,
+       so the left paddle starts beyond it rather than underneath it. */
+    const courtL = () => reserved() + W * MARGIN;
+    const courtMid = () => (courtL() + W * (1 - MARGIN)) / 2;
+
     function serve(toPlayer) {
-      ball.x = W / 2; ball.y = H / 2;
+      ball.x = courtMid(); ball.y = H / 2;
       ball.sp = START_SPEED;
       // Never dead flat and never near-vertical: a flat serve is boring and a
       // steep one spends most of its life bouncing off the top and bottom.
@@ -105,15 +140,44 @@ export const game3 = {
     centre();
     serve(true);
 
+    /** One side let the ball past. What that means depends on the opponent. */
+    function missed(side) {
+      if (bestRally < rally) bestRally = rally;
+
+      if (!vsFriend()) {
+        // One player: the computer missing does not end anything and is not
+        // scored — the rally simply carries on. Turning it into a point would
+        // mean two numbers to read, and the record is the point of the game.
+        if (side === 'right') { serve(true); return; }
+        finish();
+        return;
+      }
+
+      // Two players: a miss is a point for the other side.
+      if (side === 'left') ptsR++; else ptsL++;
+      rally = 0;
+      if (ptsL >= MATCH_POINTS || ptsR >= MATCH_POINTS) {
+        winner = ptsL > ptsR ? 'left' : 'right';
+        finish();
+        return;
+      }
+      centre();
+      // Served towards whoever just conceded, which is the convention and also
+      // stops the same player being on the back foot twice running.
+      serve(side === 'left');
+    }
+
     function finish() {
       state = 'over';
       over = 0;
-      // One write per game, and it is the only thing this game persists.
-      beat = recordScore('game3', rally);
+      // One write per game, and it is the only thing this game persists. In a
+      // match it is the longest rally the two of you managed, not the score.
+      beat = recordScore(KEY, Math.max(bestRally, rally));
     }
 
     function restart() {
       rally = 0; beat = false;
+      ptsL = 0; ptsR = 0; bestRally = 0; winner = '';
       centre();
       serve(true);
     }
@@ -126,7 +190,7 @@ export const game3 = {
       if (ball.y < BALL_R) { ball.y = BALL_R; ball.vy = Math.abs(ball.vy); flash = 90; }
       else if (ball.y > H - BALL_R) { ball.y = H - BALL_R; ball.vy = -Math.abs(ball.vy); flash = 90; }
 
-      const px = W * MARGIN + PADDLE_W;
+      const px = courtL() + PADDLE_W;
       const cx = W * (1 - MARGIN) - PADDLE_W;
 
       // Player paddle. The check is "crossed the face while moving left", so a
@@ -160,11 +224,8 @@ export const game3 = {
         }
       }
 
-      if (ball.x < -40) { finish(); return; }
-      // The opponent missing does not end anything and is not scored — the
-      // rally simply carries on. Turning it into a point would mean two numbers
-      // to read, and the record is the point of the game.
-      if (ball.x > W + 40) serve(true);
+      if (ball.x < courtL() - 60) { missed('left'); return; }
+      if (ball.x > W + 40) { missed('right'); return; }
     }
 
     function normalise() {
@@ -196,7 +257,8 @@ export const game3 = {
         ball.y = Math.min(ball.y, H - BALL_R);
       },
 
-      pointerdown() {
+      pointerdown(px, py, button) {
+        if (button === 0 && picker.pointerdown(px, py)) return;
         if (state === 'over' && over > 400) restart();
         else if (state === 'ready') wait = 0;
       },
@@ -211,6 +273,9 @@ export const game3 = {
           if (state === 'ready') wait = 0;
           return true;
         }
+        // The picker sits under the left player's hand in two-player mode, so
+        // it is worth being explicit: only a click changes the opponent, never
+        // a stray key.
         return false;
       },
 
@@ -224,14 +289,24 @@ export const game3 = {
         // Read from the held-key set rather than the keydown edge, so holding a
         // key keeps moving. Both pressed at once cancel, which is what you want
         // from a rocker: no jitter, and no last-one-wins surprise.
-        const up = host.keys.has('ArrowUp') || host.keys.has('w') || host.keys.has('W');
-        const down = host.keys.has('ArrowDown') || host.keys.has('s') || host.keys.has('S');
-        if (up !== down) {
-          you.y = Math.max(half, Math.min(H - half,
-            you.y + (down ? 1 : -1) * PLAYER_SPEED * f));
+        const held = (...keys) => keys.some(k => host.keys.has(k));
+        const drive = (bat, up, down) => {
+          if (up === down) return;
+          bat.y = Math.max(half, Math.min(H - half,
+            bat.y + (down ? 1 : -1) * PLAYER_SPEED * f));
+        };
+
+        if (vsFriend()) {
+          // Left is WASD, right is the arrows — the two hands the keyboard
+          // actually separates. Alone against the computer both sets drive the
+          // one bat, because there is no one to take the other half.
+          drive(you, held('w', 'W'), held('s', 'S'));
+          drive(cpu, held('ArrowUp'), held('ArrowDown'));
+        } else {
+          drive(you, held('ArrowUp', 'w', 'W'), held('ArrowDown', 's', 'S'));
         }
 
-        if (state === 'play') {
+        if (state === 'play' && !vsFriend()) {
           // The opponent tracks the ball, with a reaction speed and an aiming
           // error that both improve as the rally goes on. Its speed is
           // deliberately below the player's for the first dozen returns, so the
@@ -248,9 +323,12 @@ export const game3 = {
         /* ball */
         if (state === 'ready') {
           wait -= dt;
-          ball.x = W * MARGIN + PADDLE_W + BALL_R * 2.4;
-          ball.y = you.y;
-          if (wait <= 0) { state = 'play'; ball.x = W / 2; ball.y = H / 2; }
+          // Parked in front of whoever is about to serve.
+          const toLeft = ball.vx < 0;
+          ball.x = toLeft ? courtL() + PADDLE_W + BALL_R * 2.4
+                          : W * (1 - MARGIN) - PADDLE_W - BALL_R * 2.4;
+          ball.y = toLeft ? you.y : cpu.y;
+          if (wait <= 0) { state = 'play'; ball.x = courtMid(); ball.y = H / 2; }
         } else if (state === 'play') {
           const steps = Math.max(1, Math.ceil(f * ball.sp / (BALL_R * 1.2)));
           for (let i = 0; i < steps && state === 'play'; i++) step(f / steps);
@@ -266,16 +344,19 @@ export const game3 = {
         c.fillStyle = 'rgba(0,0,0,.34)';
         c.fillRect(0, 0, W, H);
 
+        picker.draw(c, host);
+
         c.strokeStyle = 'rgba(255,255,255,.13)';
         c.lineWidth = 2;
         c.setLineDash([10, 14]);
         c.beginPath();
-        c.moveTo(W / 2, 0); c.lineTo(W / 2, H);
+        c.moveTo(courtMid(), 0); c.lineTo(courtMid(), H);
         c.stroke();
         c.setLineDash([]);
 
-        paddle(c, W * MARGIN, you.y, you.h, accent);
-        paddle(c, W * (1 - MARGIN) - PADDLE_W, cpu.y, cpu.h, 'rgba(255,255,255,.72)');
+        paddle(c, courtL(), you.y, you.h, accent);
+        paddle(c, W * (1 - MARGIN) - PADDLE_W, cpu.y, cpu.h,
+          vsFriend() ? host.accent2() : 'rgba(255,255,255,.72)');
 
         if (state !== 'over') {
           const glow = flash / 130;
@@ -294,32 +375,65 @@ export const game3 = {
         /* score */
         c.textAlign = 'center';
         c.textBaseline = 'alphabetic';
-        c.fillStyle = 'rgba(255,255,255,.20)';
-        c.font = `600 ${Math.round(Math.min(150, H * 0.19))}px system-ui, sans-serif`;
-        c.fillText(String(rally), W / 2, H * 0.30);
+        const mid = courtMid();
 
-        c.font = '500 13px system-ui, sans-serif';
-        c.fillStyle = 'rgba(255,255,255,.42)';
-        const best = record();
-        c.fillText(best ? `best ${best}` : 'no record yet', W / 2, H * 0.34);
+        if (vsFriend()) {
+          // Each side's points over its own half, so which number is yours is
+          // answered by where you are sitting rather than by reading a label.
+          const big = `600 ${Math.round(Math.min(120, H * 0.15))}px system-ui, sans-serif`;
+          c.font = big;
+          c.fillStyle = 'rgba(255,255,255,.22)';
+          c.fillText(String(ptsL), (courtL() + mid) / 2, H * 0.28);
+          c.fillText(String(ptsR), (mid + W * (1 - MARGIN)) / 2, H * 0.28);
+
+          c.font = '500 13px system-ui, sans-serif';
+          c.fillStyle = 'rgba(255,255,255,.42)';
+          c.fillText(t('first to {n}', { n: MATCH_POINTS }), mid, H * 0.34);
+          c.fillStyle = 'rgba(255,255,255,.3)';
+          c.font = '500 12px system-ui, sans-serif';
+          c.fillText(t('rally {n}', { n: rally }), mid, H * 0.375);
+        } else {
+          c.fillStyle = 'rgba(255,255,255,.20)';
+          c.font = `600 ${Math.round(Math.min(150, H * 0.19))}px system-ui, sans-serif`;
+          c.fillText(String(rally), mid, H * 0.30);
+
+          c.font = '500 13px system-ui, sans-serif';
+          c.fillStyle = 'rgba(255,255,255,.42)';
+          const best = record();
+          c.fillText(best ? t('best {n}', { n: best }) : t('no record yet'), mid, H * 0.34);
+        }
 
         if (state === 'over') {
-          const t = Math.min(1, over / 260);
-          c.globalAlpha = t;
+          const fade = Math.min(1, over / 260);
+          c.globalAlpha = fade;
           c.fillStyle = 'rgba(255,255,255,.96)';
           c.font = `600 ${Math.round(Math.min(46, H * 0.055))}px system-ui, sans-serif`;
-          c.fillText(beat ? 'new record' : 'missed', W / 2, H * 0.52);
+          c.fillText(
+            vsFriend() ? (winner === 'left' ? t('left wins') : t('right wins'))
+              : beat ? t('new record') : t('missed'),
+            mid, H * 0.52);
           c.font = '500 15px system-ui, sans-serif';
           c.fillStyle = 'rgba(255,255,255,.66)';
-          c.fillText(`${rally} ${rally === 1 ? 'return' : 'returns'}`, W / 2, H * 0.56);
+          c.fillText(
+            vsFriend() ? `${ptsL} – ${ptsR}`
+              : t('{n} returns', { n: rally }),
+            mid, H * 0.56);
+          if (vsFriend() && bestRally > 0) {
+            c.fillStyle = 'rgba(255,255,255,.45)';
+            c.font = '500 13px system-ui, sans-serif';
+            c.fillText(t('longest rally {n}', { n: bestRally }), mid, H * 0.595);
+          }
           c.fillStyle = 'rgba(255,255,255,.45)';
           c.font = '500 13px system-ui, sans-serif';
-          c.fillText('Enter to play again · Esc to leave', W / 2, H * 0.60);
+          c.fillText(t('Enter to play again · Esc to leave'),
+            mid, H * (vsFriend() && bestRally > 0 ? 0.635 : 0.60));
           c.globalAlpha = 1;
         } else {
           c.fillStyle = 'rgba(255,255,255,.30)';
           c.font = '500 12px system-ui, sans-serif';
-          c.fillText('↑ ↓ to move · Esc to leave', W / 2, H - 22);
+          c.fillText(vsFriend()
+            ? t('W S · ↑ ↓ · Esc to leave')
+            : t('↑ ↓ to move · Esc to leave'), mid, H - 22);
         }
 
         c.textAlign = 'start';

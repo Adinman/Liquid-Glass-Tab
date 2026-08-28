@@ -295,6 +295,12 @@ class Engine {
   }
 
   _fail(e) {
+    // Stop whatever was running first. _connect() releases the previous stream
+    // on the way in, but this is the path where the new one never arrived — so
+    // without this the OLD capture keeps running while mode says 'sim'. For a
+    // microphone that means the recording indicator stays lit and the input
+    // stays open after the interface has said it is not listening.
+    this.stop(true);
     this.error = e?.message || String(e);
     this.mode = 'sim';
     this.label = '';

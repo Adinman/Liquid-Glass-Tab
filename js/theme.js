@@ -49,6 +49,7 @@ let refractSupported = true;
    is the path being fixed. */
 const WP_CACHE = 'lgt:wp';
 const LOCAL_POSTER = 'lgt:wp:poster';
+const LOCAL_STILL = 'lgt:wp:still';
 
 /** Frame 0 of the user's own video, as a data URL.
  *
@@ -77,6 +78,54 @@ function readLocalPoster(name) {
 
 export function clearLocalPoster() {
   try { localStorage.removeItem(LOCAL_POSTER); } catch {}
+}
+
+/** The uploaded still image, small, as a data URL.
+ *
+ *  Same problem the video poster solves, and the same answer. An uploaded image
+ *  lives in IndexedDB, which cannot be read synchronously, so early.js had
+ *  nothing to paint and fell back to the gradient underneath — which is the
+ *  flash: every new tab showed a colour preset for as long as the storage read
+ *  took, on a wallpaper the user had explicitly replaced with a photograph.
+ *
+ *  localStorage is synchronous and available before the first paint, so a
+ *  downscaled copy goes there and early.js paints that instead. The full image
+ *  still arrives from IndexedDB a few milliseconds later and replaces it. */
+function readStillThumb() {
+  try {
+    const v = JSON.parse(localStorage.getItem(LOCAL_STILL) || 'null');
+    if (!v || typeof v.url !== 'string') return null;
+    // Written by our own canvas, but it lands in a CSS url(), so it is checked
+    // rather than trusted — exactly as the video poster is.
+    if (!/^data:image\/webp;base64,[A-Za-z0-9+/=]+$/.test(v.url)) return null;
+    return v.url;
+  } catch { return null; }
+}
+
+export function clearStillThumb() {
+  try { localStorage.removeItem(LOCAL_STILL); } catch {}
+}
+
+/** Draw the uploaded image small and keep it. Runs once per upload: the thumb
+ *  is cleared whenever the stored image is replaced, so a present one always
+ *  belongs to the image that is showing. */
+async function captureStillThumb(blob) {
+  if (readStillThumb()) return;                     // already have this one
+  try {
+    const bmp = await createImageBitmap(blob);
+    // 1280 wide is enough to fill a screen without looking upscaled, and keeps
+    // the base64 near the 40 KB the video poster costs. localStorage has
+    // megabytes; this has to fit alongside everything else in one.
+    const w = Math.min(1280, bmp.width);
+    const h = Math.max(1, Math.round(bmp.height * w / bmp.width));
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    c.getContext('2d').drawImage(bmp, 0, 0, w, h);
+    bmp.close();
+    const url = c.toDataURL('image/webp', 0.7);
+    if (url.length > 900000) return;                // absurdly large, skip it
+    localStorage.setItem(LOCAL_STILL, JSON.stringify({ url }));
+  } catch { /* no webp encoder, quota, undecodable — the gradient still works */ }
 }
 
 /** Draw the first frame of the live wallpaper and keep it. */
@@ -125,8 +174,15 @@ function paintCachedWallpaper() {
       // frame decode. Same file every time, so there is nothing to wait to
       // find out. applyVideoWallpaper compares dataset.src and will leave this
       // alone rather than reloading it.
+      //
+      // Unless low performance mode is on, in which case the poster above is
+      // the whole wallpaper and the clip is never wanted. Checking the cached
+      // flag rather than S.lowPerf is the point: settings have not loaded yet,
+      // and by the time they have, the fetch and the first decode have already
+      // happened — which is the cost this mode exists to avoid, at the worst
+      // possible moment for it.
       const vid = document.getElementById('wp-video');
-      if (vid && !vid.dataset.src) {
+      if (vid && !vid.dataset.src && !v.low) {
         vid.hidden = false;
         vid.muted = true;                 // or autoplay is refused
         vid.loop = true;
@@ -184,6 +240,10 @@ function rememberWallpaper() {
     wp: document.documentElement.dataset.wp,
     mesh: parseFloat(document.documentElement.style.getPropertyValue('--mesh-op')),
   };
+  // Read before settings exist on the next tab, by paintCachedWallpaper, which
+  // otherwise starts the clip the moment the module loads.
+  if (S.lowPerf) v.low = 1;
+
   const clip = bundled(CLIPS, S.wallpaperVideo || '');
   const photo = bundled(PHOTOS, S.wallpaperCustom || '');
   // `file` and `grad` are the already-resolved values early.js paints with;
@@ -198,14 +258,18 @@ function rememberWallpaper() {
     v.file = `${photo.id}.avif`;
   }
   else if (S.wallpaperCustom && /^https?:/i.test(S.wallpaperCustom)) v.url = S.wallpaperCustom;
-  // An uploaded image lives in IndexedDB and cannot be read synchronously, so
-  // the preset underneath it is cached instead — a plain gradient for one frame
-  // beats a wallpaper that is not yours.
-  else {
-    v.preset = S.wallpaper;
-    const w = WALLPAPERS.find(x => x.id === S.wallpaper);
-    if (w) v.grad = w.css;
-  }
+  // An uploaded image lives in IndexedDB, which cannot be read before the first
+  // paint. The downscaled copy in localStorage can be, so this only has to say
+  // that there is one — see captureStillThumb.
+  else if (S.wallpaperCustom === 'local') v.localStill = 1;
+  else v.preset = S.wallpaper;
+
+  // The gradient underneath, always, as the last resort. Every branch above can
+  // come up empty on a given tab — a thumbnail not captured yet, a remote URL
+  // that fails its check — and without this early.js then paints the
+  // stylesheet's own default, which is a wallpaper the user never chose.
+  const under = WALLPAPERS.find(x => x.id === S.wallpaper);
+  if (under) v.grad = under.css;
 
   try { localStorage.setItem(WP_CACHE, JSON.stringify(v)); } catch { /* private mode, full disk */ }
 }
@@ -238,7 +302,7 @@ export function applyTheme() {
   st.setProperty('--dock-size', S.dockSize + 'px');
   st.setProperty('--dock-mag', S.dockMagnify);
   st.setProperty('--dock-gap', (S.dockGap ?? 6) + 'px');
-  r.dataset.dockHover = S.dockHover || 'magnify';
+  r.dataset.dockHover = S.lowPerf ? 'none' : (S.dockHover || 'magnify');
   st.setProperty('--icon-sat', (S.dockVibrancy ?? 135) + '%');
   st.setProperty('--icon-con', (S.dockContrast ?? 108) + '%');
   setIconMode(S.iconSource);
@@ -249,15 +313,32 @@ export function applyTheme() {
   st.fontSize = (16 * S.fontScale / 100).toFixed(2) + 'px';
 
   r.dataset.scheme = S.scheme;
-  r.dataset.sheen = S.sheen ? 'on' : 'off';
-  r.dataset.animate = S.animateBg ? 'on' : 'off';
+
+  /* Low performance mode. Every line below reads `S.lowPerf &&` rather than
+     writing to settings, because the point is that switching it off gives the
+     user back exactly what they had. The three it forces are the three that
+     cost something every frame rather than once:
+
+       animate  the drifting mesh, which also forces every panel's
+                backdrop-filter to re-run each frame — see css/perf.css
+       sheen    a gradient that fades in under the pointer
+       refract  an feImage + feDisplacementMap pass per panel per frame
+
+     dockHover is forced here too so the CSS matches, but the rAF loop it
+     drives is stopped in dock.js — no attribute can switch off a running
+     loop. The live wallpaper is handled in applyVideoWallpaper below. */
+  const low = !!S.lowPerf;
+  r.dataset.perf = low ? 'low' : 'full';
+
+  r.dataset.sheen = S.sheen && !low ? 'on' : 'off';
+  r.dataset.animate = S.animateBg && !low ? 'on' : 'off';
   r.dataset.dockLabels = S.dockLabels ? 'on' : 'off';
   // Refraction 0 has to take the SVG filter out of the backdrop chain, not
   // just zero its displacement. Leaving `url(#lg-refract)` in `backdrop-filter`
   // still makes the compositor run the feImage + feDisplacementMap pass on
   // every panel every frame, for a result that is a no-op — so the setting
   // gave you the flat look without the GPU saving it advertises.
-  const refractOn = refractSupported && S.refract > 0;
+  const refractOn = refractSupported && S.refract > 0 && !low;
   r.dataset.refract = refractOn ? 'on' : 'off';
   $('#lg-disp').setAttribute('scale', refractOn ? S.refract : 0);
 
@@ -283,6 +364,9 @@ function releaseLocalImage() {
  *  new image would never appear. */
 export function invalidateLocalImage() {
   if (imageURL) { URL.revokeObjectURL(imageURL); imageURL = null; }
+  // The thumbnail belongs to the image being replaced, so it has to go with it
+  // — otherwise the next new tab paints the old wallpaper before the new one.
+  clearStillThumb();
 }
 
 async function ensureLocalImage(node) {
@@ -294,6 +378,9 @@ async function ensureLocalImage(node) {
   if (!blob) { node.style.backgroundImage = presetCSS(); return; }
   imageURL = URL.createObjectURL(blob);
   node.style.backgroundImage = `url("${imageURL}")`;
+  // Not awaited: the wallpaper is already on screen, and this only has to be
+  // in place before the NEXT new tab.
+  captureStillThumb(blob);
 }
 
 const presetCSS = () => (WALLPAPERS.find(w => w.id === S.wallpaper) || WALLPAPERS[0]).css;
@@ -422,6 +509,21 @@ export async function applyVideoWallpaper() {
     return;
   }
 
+  // Low performance mode. A clip is a video decoding continuously underneath
+  // every panel on the page, which makes it the most expensive single thing
+  // here. Stopping before the src is ever set means it is not merely paused —
+  // it is never fetched or decoded at all.
+  //
+  // The wallpaper still looks like the clip: paintStill has already put the
+  // clip's own first frame on the layer behind this element, and that is what
+  // stays visible. The picture is the same, it just stops moving.
+  if (S.lowPerf) {
+    v.pause();
+    v.classList.remove('ready');
+    v.hidden = true;
+    return;
+  }
+
   v.hidden = false;
   v.muted = true;                       // required, or autoplay is refused
   v.loop = true;
@@ -500,20 +602,29 @@ function initVideoWallpaper() {
   // without this the class is never added and the video stays invisible at
   // opacity 0 for good.
   if (v.readyState >= 2) { v.classList.add('ready'); setRate(v); captureLocalPoster(v); }
-  v.addEventListener('error', () => {
+  const onVideoError = () => {
     v.classList.remove('ready');
     v.hidden = true;
     // The still layer is currently standing in for the video's first frame.
     // With the video dead it has to go back to the actual wallpaper, or a
     // failed clip leaves a 192x108 thumbnail stretched over the whole screen.
     paintStill($('#wp-image'), { ignoreVideo: true });
-  });
+  };
+  v.addEventListener('error', onVideoError);
+  // And the same catching-up the readyState check above does, for the other
+  // outcome. paintCachedWallpaper starts the clip at module load, before this
+  // function runs, so an error in that window fires with no listener attached
+  // and is lost — leaving the still layer standing in for a video that will
+  // never arrive.
+  if (v.error) onVideoError();
 
   // Decoding video in a tab you're not looking at wastes battery for nothing.
   document.addEventListener('visibilitychange', () => {
     if (!S.wallpaperVideo) return;
     if (document.hidden) { if (S.videoPauseHidden !== false) v.pause(); }
-    else v.play().catch(() => {});
+    // Without the guard, coming back to the tab would start a clip that low
+    // performance mode had deliberately never started.
+    else if (!S.lowPerf) v.play().catch(() => {});
   });
 }
 

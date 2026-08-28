@@ -40,14 +40,17 @@ export const tasks = {
 
     function draw() {
       list.innerHTML = '';
-      const open = items.filter(t => !t.done).length;
+      const open = items.filter(x => !x.done).length;
       count.textContent = items.length ? `${open} open` : '';
-      for (const t of items) {
-        list.append(el('div', { class: 'task' + (t.done ? ' done' : '') },
-          el('div', { class: 'box', text: t.done ? '✓' : '', onclick: () => { t.done = !t.done; persist(); draw(); } }),
-          el('div', { class: 'txt', text: t.text }),
+      // `task`, not `t`: the delete button's title is t('Delete'), and a loop
+      // variable of that name turned it into a call on the task object — so
+      // the list threw on its first row and the widget rendered empty.
+      for (const task of items) {
+        list.append(el('div', { class: 'task' + (task.done ? ' done' : '') },
+          el('div', { class: 'box', text: task.done ? '✓' : '', onclick: () => { task.done = !task.done; persist(); draw(); } }),
+          el('div', { class: 'txt', text: task.text }),
           el('button', { class: 'del icon-btn', text: '✕', title: t('Delete'),
-            onclick: () => { items = items.filter(x => x !== t); persist(); draw(); } })));
+            onclick: () => { items = items.filter(x => x !== task); persist(); draw(); } })));
       }
     }
 

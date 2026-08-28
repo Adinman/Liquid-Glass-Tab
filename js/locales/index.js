@@ -21,6 +21,17 @@ export const LOCALES = [
   { id: 'ko',    name: '한국어',         en: 'Korean' },
   { id: 'ru',    name: 'Русский',      en: 'Russian' },
   { id: 'zh-CN', name: '简体中文',       en: 'Chinese (Simplified)' },
+  { id: 'bn',    name: 'বাংলা', en: 'Bengali' },
+  { id: 'mr',    name: 'मराठी', en: 'Marathi' },
+  { id: 'te',    name: 'తెలుగు', en: 'Telugu' },
+  { id: 'ta',    name: 'தமிழ்', en: 'Tamil' },
+  { id: 'gu',    name: 'ગુજરાતી', en: 'Gujarati' },
+  { id: 'kn',    name: 'ಕನ್ನಡ', en: 'Kannada' },
+  { id: 'ml',    name: 'മലയാളം', en: 'Malayalam' },
+  { id: 'or',    name: 'ଓଡ଼ିଆ', en: 'Odia' },
+  { id: 'pa',    name: 'ਪੰਜਾਬੀ', en: 'Punjabi' },
+  { id: 'as',    name: 'অসমীয়া', en: 'Assamese' },
+  { id: 'ur',    name: 'اردو', en: 'Urdu', rtl: true },
 ];
 
 /* Right-to-left languages set `rtl: true`. None yet — Urdu is the one in the

@@ -149,7 +149,8 @@
 #dock-zone[data-edge="top"][data-hidden="true"] #dock { transform: translateY(calc(-100% - 26px)); }
 #dock-zone[data-edge="left"][data-hidden="true"] #dock { transform: translateX(calc(-100% - 26px)); }
 #dock-zone[data-edge="right"][data-hidden="true"] #dock { transform: translateX(calc(100% + 26px)); }
-#dock-zone:hover #dock, #dock-zone:focus-within #dock { transform: none; }
+#dock-zone:hover #dock, #dock-zone:focus-within #dock,
+#dock-zone[data-dragging] #dock { transform: none; }
 
 /* Reveal strip. Without this, auto-hide is a one-way trip: the zone is
    pointer-events:none and the only hoverable child is #dock itself, which has
@@ -202,6 +203,9 @@
      a CSS transition on top of it fights the per-frame writes. */
   cursor: pointer;
   will-change: transform;
+  /* A drag is a press and a sweep across the row, which is also the gesture for
+     selecting the labels it passes over. */
+  user-select: none; -webkit-user-select: none;
 }
 #dock-zone[data-edge="top"] .dock-item { transform-origin: top center; }
 /* Scale away from the edge the dock sits on, so a magnified icon grows into the
@@ -224,6 +228,9 @@
 }
 /* Favicons are tiny and sit on a bright translucent plate, which flattens
    them. A saturation/contrast lift makes brand colours read at this size. */
+/* Favicons are <img>, which the browser drags natively — that would start an
+   HTML5 drag of the image on top of the reorder gesture. */
+.dock-item img { -webkit-user-drag: none; }
 .dock-item img {
   filter:
     saturate(var(--icon-sat, 130%))
@@ -271,7 +278,22 @@
 #dock-zone[data-edge="right"] .dock-sep {
   width: 62%; height: 1px; margin: 5px 0;
 }
-.dock-item.drop-target { outline: 2px dashed var(--accent); outline-offset: -4px; }
+/* Reordering. The magnify loop stops writing transforms for as long as the
+   attribute is here (see dock.js), so these are the only ones in play and a
+   transition on them is safe — it is what makes the other icons glide aside
+   rather than teleport. The held icon is excluded because it tracks the
+   pointer, and anything easing that would put it behind the cursor. */
+#dock-zone[data-dragging] .dock-item {
+  transition: transform .18s cubic-bezier(.2,.9,.25,1);
+}
+#dock-zone[data-dragging] .dock-item.dragging {
+  transition: none; cursor: grabbing; z-index: 3;
+  filter: drop-shadow(0 12px 20px rgba(0,0,0,.5));
+}
+#dock-zone[data-dragging] .dock-item.dragging .plate { background: hsl(0 0% 100% / .3); }
+/* Labels sit under the icons and would smear across the row behind the one
+   being carried over them. */
+#dock-zone[data-dragging] .dock-item .label { opacity: 0; }
 
 #dock-flyout {
   pointer-events: auto; position: absolute; z-index: 2; bottom: calc(100% + 10px);

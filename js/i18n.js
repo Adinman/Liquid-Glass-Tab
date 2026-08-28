@@ -28,6 +28,11 @@ import { LOCALES } from './locales/index.js';
 
 let cat = {};                 // the active catalogue; empty means English
 let active = 'en';
+// The language most recently ASKED for, which is not the same as the one most
+// recently loaded. Two switches can overlap and finish out of order, and
+// without this the slower import wins — so picking a language twice quickly
+// leaves the interface in the first one.
+let wantedLocale = 'en';
 const listeners = new Set();
 
 /** The language actually in use, after resolving 'auto'. */
@@ -98,23 +103,30 @@ export function wanted() {
 export async function setLocale(id) {
   const next = LOCALES.some(l => l.id === id) ? id : 'en';
   if (next === active && (next === 'en' || Object.keys(cat).length)) return;
+  wantedLocale = next;
 
   if (next === 'en') {
     cat = {};
   } else {
     try {
       const mod = await import(`./locales/${next}.js`);
+      // Someone asked for a different language while this file was loading.
+      // Assigning cat here would put that language's catalogue under the other
+      // one's name, so the interface would be half-translated into each.
+      if (wantedLocale !== next) return;
       cat = mod.messages || {};
     } catch (e) {
       // A missing or broken catalogue must not blank the interface. English is
       // always reachable because it needs no file at all.
       console.error('[cgt] locale', next, e);
+      if (wantedLocale !== next) return;   // a newer choice is already loading
       cat = {};
       active = 'en';
       applyDocumentLanguage();
       return;
     }
   }
+  if (wantedLocale !== next) return;
   active = next;
   applyDocumentLanguage();
 }

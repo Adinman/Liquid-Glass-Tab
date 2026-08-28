@@ -134,8 +134,8 @@ export const weather = {
       // next 8 hours, starting from the current hour
       const hours = el('div', { class: 'wx-hours' });
       const nowIso = new Date().getHours();
-      const startIdx = data.hourly.time.findIndex(t => new Date(t).getHours() === nowIso
-        && new Date(t).getDate() === new Date().getDate());
+      const startIdx = data.hourly.time.findIndex(iso => new Date(iso).getHours() === nowIso
+        && new Date(iso).getDate() === new Date().getDate());
       const from = startIdx < 0 ? 0 : startIdx;
       for (let i = from; i < from + 8 && i < data.hourly.time.length; i++) {
         const d = new Date(data.hourly.time[i]);
@@ -193,7 +193,7 @@ function parseFeed(xmlText, sourceName) {
   if (doc.querySelector('parsererror')) return [];
   const nodes = [...doc.querySelectorAll('item'), ...doc.querySelectorAll('entry')];
   return nodes.map(n => {
-    const get = t => n.querySelector(t)?.textContent?.trim() || '';
+    const get = sel => n.querySelector(sel)?.textContent?.trim() || '';
     const link = n.querySelector('link')?.getAttribute?.('href') || get('link') || get('guid');
     const dateStr = get('pubDate') || get('updated') || get('published') || get('date');
     const ts = dateStr ? Date.parse(dateStr) : NaN;

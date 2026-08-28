@@ -1,0 +1,66 @@
+/* Right-to-left.
+ *
+ * Only Urdu needs this so far. js/i18n.js sets `dir="rtl"` on the root from the
+ * `rtl` flag in js/locales/index.js, and everything here hangs off that
+ * attribute — so a left-to-right language never pays for any of it, and the
+ * rules cannot leak.
+ *
+ * This mirrors the things that are positioned against a physical edge. Most of
+ * the interface does not need it: the layout is flexbox, and flexbox already
+ * reverses itself under `dir`, which is why there is far less here than the
+ * size of the stylesheet would suggest.
+ *
+ * Deliberately NOT mirrored:
+ *
+ *  - The wallpaper stack and the arcade canvas. A canvas is painted in its own
+ *    coordinates and knows nothing about `dir`; mirroring it would need every
+ *    game rewritten around a flipped x-axis, for a board game that reads the
+ *    same either way. The level picker stays on the left.
+ *  - The bookmark dock's edge setting. "Left" and "Right" there are a choice
+ *    the user made about their screen, not about their language, and flipping
+ *    it would move a dock they deliberately put somewhere.
+ */
+
+/* Panels pinned to a screen corner. */
+:root[dir="rtl"] #hud { right: auto; left: 16px; }
+:root[dir="rtl"] #settings { right: auto; left: 14px; }
+:root[dir="rtl"] #spaces { right: auto; left: 14px; }
+
+/* The settings drawer slides in from whichever side it now lives on. */
+:root[dir="rtl"] #settings { animation-name: slide-in-rtl; }
+@keyframes slide-in-rtl { from { opacity: 0; transform: translateX(-30px); } }
+
+/* The drag handle glyph sits before the heading; in RTL it belongs after it. */
+:root[dir="rtl"] #settings header h2::before {
+  margin-right: 0;
+  margin-left: 9px;
+}
+
+/* Dock labels. These carry explicit translate values for their slide-in, and a
+   percentage translate is not mirrored by `dir` the way margins are. */
+:root[dir="rtl"] #dock-zone[data-edge="left"] .dock-item .label { translate: 6px -50%; }
+:root[dir="rtl"] #dock-zone[data-edge="right"] .dock-item .label { translate: -6px -50%; }
+:root[dir="rtl"] #dock-zone[data-edge="left"] .dock-item:hover .label,
+:root[dir="rtl"] #dock-zone[data-edge="right"] .dock-item:hover .label { translate: 0 -50%; }
+
+/* Numbers stay left-to-right inside right-to-left text — a clock reading 14:05
+   must not come out as 05:14. `unicode-bidi: isolate` on the elements that hold
+   a bare number is what guarantees that regardless of what sits beside them. */
+:root[dir="rtl"] .tabular,
+:root[dir="rtl"] .w-clock .time,
+:root[dir="rtl"] .ar-level-best,
+:root[dir="rtl"] .set-row input[type=number] {
+  unicode-bidi: isolate;
+  direction: ltr;
+}
+
+/* The search field and the paste box hold URLs and settings names, which are
+   Latin even in an Urdu interface. Left-aligned they are readable; mirrored
+   they put the scheme at the wrong end of the line. */
+:root[dir="rtl"] #settings-search input,
+:root[dir="rtl"] .bulk-paste,
+:root[dir="rtl"] .set-row input[type=text],
+:root[dir="rtl"] .code {
+  direction: ltr;
+  text-align: left;
+}

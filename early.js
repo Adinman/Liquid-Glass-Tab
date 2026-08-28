@@ -43,8 +43,28 @@
           css = 'url("' + p.url + '")';
         }
       } catch (e) { /* fall through to the stylesheet default */ }
-    } else if (typeof v.grad === 'string'
-               && /^linear-gradient\([#%\w\s,.()-]+\)$/.test(v.grad)) {
+    } else if (v.localStill) {
+      // An uploaded image's own downscaled copy. Same shape as the video
+      // poster above, and checked the same way: a data: URL of exactly the
+      // type we write, and nothing but base64 after it.
+      try {
+        var s = JSON.parse(localStorage.getItem('lgt:wp:still') || 'null');
+        if (s && typeof s.url === 'string'
+            && /^data:image\/webp;base64,[A-Za-z0-9+/=]+$/.test(s.url)) {
+          css = 'url("' + s.url + '")';
+        }
+      } catch (e) { /* fall through to the gradient below */ }
+    } else if (typeof v.url === 'string'
+               && /^https?:\/\/[^"'\\()\s<>]+$/i.test(v.url)) {
+      // A remote image. The pattern is deliberately narrower than "a URL": it
+      // is interpolated into url("..."), so a quote, a backslash, a paren or
+      // whitespace could close the function and inject a further declaration.
+      css = 'url("' + v.url + '")';
+    }
+
+    // The gradient underneath, if none of the above produced anything.
+    if (!css && typeof v.grad === 'string'
+        && /^linear-gradient\([#%\w\s,.()-]+\)$/.test(v.grad)) {
       css = v.grad;
     }
 

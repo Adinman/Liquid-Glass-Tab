@@ -1,8 +1,8 @@
 // Clock, search, quote, calendar, world clocks, countdown, speed dial, battery.
 import { el, $, pad2, clamp, hostOf, toast, debounce,
-         openIncognito, incognitoIcon } from '../util.js';
+         openIncognito, incognitoIcon, webSearch } from '../util.js';
 import { iconElement } from '../icons.js';
-import { ENGINES, QUOTES, HOLIDAYS } from '../config.js';
+import { QUOTES, HOLIDAYS } from '../config.js';
 import { S, set } from '../state.js';
 import { t } from '../i18n.js';
 
@@ -91,69 +91,48 @@ export const clock = {
 export const search = {
   id: 'search', title: 'Search', className: 'w-search', chrome: false,
   render(panel) {
+    // The engine cannot be named here, because this extension is not the one
+    // choosing it — see webSearch in util.js. Chrome's own omnibox says the same
+    // thing for the same reason.
     const input = el('input', { type: 'text', spellcheck: 'false', autocomplete: 'off',
-      placeholder: `Search ${ENGINES[S.searchEngine]?.name || 'the web'} or enter an address` });
-    const engine = el('button', { class: 'pill engine', type: 'button',
-      text: ENGINES[S.searchEngine]?.name || 'Google', title: t('Change search engine') });
+      placeholder: t('Search or enter an address') });
 
-    // Private-window toggle. Deliberately a latching control rather than a
-    // hidden modifier, because "am I about to search privately?" has to be
-    // answerable at a glance — it lights up in the accent colour when armed.
+    // Opens an empty private window. It used to latch, and an armed search sent
+    // the query to a private window — but sending a query anywhere means naming
+    // an engine, and naming one is the thing CGT is no longer allowed to do.
+    // What survives is the part that never needed an engine: one click to a
+    // private window, the same as the I shortcut and the palette command.
     const priv = el('button', {
-      class: 'pill incog' + (S.searchIncognito ? ' on' : ''), type: 'button',
-      title: 'Search in a private window (Ctrl+Enter does it once)',
-      'aria-pressed': S.searchIncognito ? 'true' : 'false',
+      class: 'pill incog', type: 'button',
+      title: t('Open a private window'),
+      'aria-label': t('Open a private window'),
     }, incognitoIcon());
-    priv.addEventListener('click', async () => {
-      const on = !S.searchIncognito;
-      priv.classList.toggle('on', on);
-      priv.setAttribute('aria-pressed', on ? 'true' : 'false');
-      await set({ searchIncognito: on });
-      syncPlaceholder();
-    });
+    priv.addEventListener('click', () => openIncognito());
 
     const form = el('form', {}, el('span', { text: '⌕', style: { opacity: .5, fontSize: '18px' } }),
-      input, priv, engine);
+      input, priv);
     const sugg = el('div', { class: 'sugg glass', hidden: true });
     panel.append(form, sugg);
 
-    /** Which engine a private search should use. Defaults to the normal one,
-     *  so this only differs for people who deliberately set it. */
-    const privateEngine = () =>
-      ENGINES[S.searchIncognitoEngine] ? S.searchIncognitoEngine : S.searchEngine;
-
-    const syncPlaceholder = () => {
-      const id = S.searchIncognito ? privateEngine() : S.searchEngine;
-      const name = ENGINES[id]?.name || 'the web';
-      input.placeholder = S.searchIncognito
-        ? `Search ${name} privately`
-        : `Search ${name} or enter an address`;
-    };
-    syncPlaceholder();
-
     let items = [], sel = -1;
 
-    /** Turn what was typed into a URL — a bare host becomes https://, anything
-     *  else becomes a search on the chosen engine. */
-    const resolve = (q, privately) => {
+    /** An address, or null if this is a search. Only the address half resolves
+     *  to a URL here; the search half is Chrome's to route, not ours. */
+    const asUrl = q => {
       const looksLikeUrl = /^(https?:\/\/|localhost[:/]|(\S+\.)+[a-z]{2,}(\/|$))/i.test(q) && !q.includes(' ');
+      if (!looksLikeUrl) return null;
       // Test for the scheme, not a "http" prefix: `httpfoo.com` starts with
       // "http" but has no scheme, and passing it through unchanged made this a
       // relative navigation off the extension's own origin.
-      const hasScheme = /^https?:\/\//i.test(q);
-      if (looksLikeUrl) return hasScheme ? q : 'https://' + q;
-      const id = privately ? privateEngine() : S.searchEngine;
-      return ENGINES[id].url.replace('%s', encodeURIComponent(q));
+      return /^https?:\/\//i.test(q) ? q : 'https://' + q;
     };
 
-    const go = (q, privately = S.searchIncognito) => {
+    const go = q => {
       q = q.trim();
       if (!q) return;
-      const url = resolve(q, privately);
-      // A private search deliberately leaves this tab where it is — the point
-      // is that the result opens elsewhere — so clear the box instead.
-      if (privately) { openIncognito(url); input.value = ''; return; }
-      location.href = url;
+      const url = asUrl(q);
+      if (url) { location.href = url; return; }
+      webSearch(q);
     };
 
     const renderSugg = () => {
@@ -179,31 +158,17 @@ export const search = {
 
     input.addEventListener('input', () => fetchSugg(input.value));
     input.addEventListener('blur', () => setTimeout(() => { sugg.hidden = true; }, 120));
-    // Ctrl/Cmd+Enter searches privately once without arming the toggle, for
-    // the one-off case. Handled on keydown because the form's submit event
-    // has already lost the modifier by the time it fires.
     input.addEventListener('keydown', e => {
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         if (!items.length) return;
         e.preventDefault();
         sel = clamp(sel + (e.key === 'ArrowDown' ? 1 : -1), -1, items.length - 1);
         renderSugg();
-      } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-        e.preventDefault();
-        go(sel >= 0 ? items[sel] : input.value, true);
       } else if (e.key === 'Escape') { items = []; renderSugg(); input.blur(); }
     });
     form.addEventListener('submit', e => {
       e.preventDefault();
       go(sel >= 0 ? items[sel] : input.value);
-    });
-
-    engine.addEventListener('click', async () => {
-      const keys = Object.keys(ENGINES);
-      const next = keys[(keys.indexOf(S.searchEngine) + 1) % keys.length];
-      await set({ searchEngine: next });
-      engine.textContent = ENGINES[next].name;
-      syncPlaceholder();
     });
 
     panel._focus = () => input.focus();
@@ -270,13 +235,13 @@ export const worldclock = {
     const draw = () => {
       list.innerHTML = '';
       for (const z of S.worldClocks) {
-        let t = '—';
+        let time = '—';
         try {
-          t = new Date().toLocaleTimeString(undefined,
+          time = new Date().toLocaleTimeString(undefined,
             { timeZone: z.tz, hour: '2-digit', minute: '2-digit', hour12: !S.clock24 });
-        } catch { t = 'bad tz'; }
+        } catch { time = 'bad tz'; }
         list.append(el('div', { class: 'wc-row' },
-          el('span', { class: 'z', text: z.label }), el('span', { class: 'tabular', text: t })));
+          el('span', { class: 'z', text: z.label }), el('span', { class: 'tabular', text: time })));
       }
     };
     return tick(draw, 10000);
@@ -325,13 +290,16 @@ export const countdown = {
     panel.append(head('Countdown', editBtn), num, lbl, editor);
 
     function draw() {
-      const t = countdownTarget();
-      if (!t) { num.textContent = '—'; lbl.textContent = t('Pick a date'); return; }
-      const diff = t.date - Date.now();
-      if (diff <= 0) { num.textContent = '🎉'; lbl.textContent = `${t.name} — it’s here`; return; }
+      const target = countdownTarget();
+      // Named `target`, not `t`: in the branch below t would have been null,
+      // and t('Pick a date') called it — so the one path that exists to say
+      // "no date yet" was the one path that threw.
+      if (!target) { num.textContent = '—'; lbl.textContent = t('Pick a date'); return; }
+      const diff = target.date - Date.now();
+      if (diff <= 0) { num.textContent = '🎉'; lbl.textContent = `${target.name} — it’s here`; return; }
       const d = Math.floor(diff / 864e5), h = Math.floor(diff / 36e5) % 24, m = Math.floor(diff / 6e4) % 60;
       num.textContent = d > 0 ? `${d}d ${h}h` : `${h}h ${pad2(m)}m`;
-      lbl.textContent = `until ${t.name}`;
+      lbl.textContent = `until ${target.name}`;
     }
 
     function buildEditor() {

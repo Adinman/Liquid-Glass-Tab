@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "CGT: Customizable Glass Tab",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "A customizable glass new tab: bookmark dock, weather, news, Spotify controls with an audio visualizer, and synced lyrics.",
   "minimum_chrome_version": "116",
 
@@ -23,6 +23,7 @@
 
   "permissions": [
     "bookmarks",
+    "search",
     "storage",
     "unlimitedStorage",
     "favicon",

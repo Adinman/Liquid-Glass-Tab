@@ -5,11 +5,12 @@ import { S, loadSettings, set, setWidget, onChange } from './state.js';
 import { initTheme, applyTheme, attachSheen } from './theme.js';
 import { initDock, applyDockSettings, renderDock } from './dock.js';
 import { initPalette } from './palette.js';
-import { initSpaces, renderSpaces } from './spaces.js';
+import { initSpaces, renderSpaces, spaceList, activeSpace, switchTo } from './spaces.js';
 import { initSettings } from './settings.js';
 import { REGISTRY } from './widgets/index.js';
 import { initArcade } from './arcade.js';
-import { initI18n, onLocaleChange, translateDOM } from './i18n.js';
+import { initI18n, onLocaleChange, translateDOM, t } from './i18n.js';
+import { ACTIONS, actionFor, keyLabel, resolve as resolveKey } from './keys.js';
 
 const stage = () => $('#stage');
 const teardown = new Map();   // widget id -> cleanup fn
@@ -167,6 +168,7 @@ function sizeHandle(panel, id) {
     };
     grip.addEventListener('pointermove', move);
     grip.addEventListener('pointerup', up);
+    grip.addEventListener('pointercancel', up);
   });
 
   return grip;
@@ -556,6 +558,12 @@ function makeDraggable(panel, id) {
     };
     panel.addEventListener('pointermove', move);
     panel.addEventListener('pointerup', up);
+    // A pointer sequence does not always end in pointerup — a system gesture or
+    // a touch-scroll can cancel it. Without this the panel keeps the `dragging`
+    // class, and relayout() reads that class to decide what to skip, so the
+    // widget silently stops resizing and stops being repositioned for the rest
+    // of the session with nothing on screen to explain it.
+    panel.addEventListener('pointercancel', up);
   });
 }
 
@@ -566,24 +574,61 @@ function toggleEdit() {
   toast(on ? 'Edit mode — drag panels to move them' : 'Layout locked');
 }
 
-/* ---------------- shortcuts ---------------- */
+/* ---------------- shortcuts ----------------
+   What each action does. Which key runs it lives in settings (⚙ → Shortcuts)
+   and is resolved per keypress, so a rebind takes effect immediately and
+   without re-registering anything. */
+const RUN = {
+  palette:   () => window.dispatchEvent(new Event('lgt:palette')),
+  search:    () => $('.w-search')?._focus?.(),
+  settings:  () => window.dispatchEvent(new Event('lgt:settings')),
+  edit:      () => toggleEdit(),
+  wallpaper: () => window.dispatchEvent(new Event('lgt:cycle-wallpaper')),
+  dock:      () => set({ dockAutohide: !S.dockAutohide }).then(applyDockSettings),
+  incognito: () => openIncognito(),
+  help:      () => toast(shortcutSummary()),
+  space:     () => {
+    const list = spaceList();
+    // One homescreen is the default state, and cycling within a list of one
+    // looks like a dead key rather than like nothing to cycle to.
+    if (list.length < 2) { toast(t('There is only one homescreen.')); return; }
+    const i = list.findIndex(s => s.id === activeSpace()?.id);
+    switchTo(list[(i + 1) % list.length].id);
+  },
+  perf:      async () => {
+    await set({ lowPerf: !S.lowPerf });
+    applyTheme();
+    applyDockSettings();
+    // The mode changes how the whole page looks, so saying which way it went
+    // is not chatter — from a keypress there is otherwise nothing to confirm
+    // that the flatter interface was asked for rather than broken.
+    toast(S.lowPerf ? t('Low performance mode on') : t('Low performance mode off'));
+  },
+};
+
+/** The help toast, built from what is actually bound. It used to be a hardcoded
+ *  string, which was fine until the keys could move — then it would have been a
+ *  list of shortcuts that confidently named the wrong keys. */
+function shortcutSummary() {
+  const parts = [];
+  for (const a of ACTIONS) {
+    if (a.id === 'help') continue;              // you are reading it
+    const b = resolveKey(S.keys, a.id);
+    if (b) parts.push(`${keyLabel(b)} ${t(a.label).toLowerCase()}`);
+  }
+  return parts.join(' · ') || t('No shortcuts are set.');
+}
+
 function initKeys() {
   document.addEventListener('keydown', e => {
     const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName)
       || document.activeElement?.isContentEditable;
-
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
-      e.preventDefault(); window.dispatchEvent(new Event('lgt:palette')); return;
-    }
-    if (typing) return;
-
-    if (e.key === '/') { e.preventDefault(); $('.w-search')?._focus?.(); }
-    else if (e.key.toLowerCase() === 'e') toggleEdit();
-    else if (e.key === ',') window.dispatchEvent(new Event('lgt:settings'));
-    else if (e.key.toLowerCase() === 'b') set({ dockAutohide: !S.dockAutohide }).then(applyDockSettings);
-    else if (e.key.toLowerCase() === 'w') window.dispatchEvent(new Event('lgt:cycle-wallpaper'));
-    else if (e.key.toLowerCase() === 'i') openIncognito();
-    else if (e.key === '?') toast('Ctrl+K palette · / search · I private window · E edit · , settings · W wallpaper · B dock');
+    const id = actionFor(S.keys, e, typing);
+    if (!id || !RUN[id]) return;
+    // Every one of these replaces whatever the key would otherwise do — `/`
+    // opens Chrome's quick-find, `,` types a comma into nothing.
+    e.preventDefault();
+    RUN[id]();
   });
 }
 

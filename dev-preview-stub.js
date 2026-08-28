@@ -58,7 +58,28 @@
       getTree: async () => [{ id: '0', children: BM }],
       getSubTree: async id => [find(BM, id) || BM[0]],
       search: async () => [],
-      move: async () => {},
+      // Faithful to Chrome: the item is detached first, and when it is moving
+      // further down inside the same folder the target index is decremented to
+      // account for its own removal. Without that the stub disagrees with the
+      // browser in exactly the case reordering gets wrong.
+      move: async (id, dest) => {
+        let node = null, fromParent = null, fromIndex = -1;
+        const findIn = nodes => {
+          const i = nodes.findIndex(n => n.id === id);
+          if (i >= 0) { node = nodes[i]; fromParent = nodes; fromIndex = i; return true; }
+          return nodes.some(n => n.children && findIn(n.children));
+        };
+        findIn(BM);
+        if (!node) throw new Error("Can't find bookmark for id.");
+        const parent = find(BM, dest.parentId) || BM[0];
+        parent.children ||= [];
+        let index = dest.index == null ? parent.children.length : dest.index;
+        fromParent.splice(fromIndex, 1);
+        if (fromParent === parent.children && index > fromIndex) index--;
+        parent.children.splice(Math.max(0, Math.min(index, parent.children.length)), 0, node);
+        node.parentId = parent.id;
+        return node;
+      },
       create: async ({ parentId, title, url }) => {
         const parent = find(BM, parentId) || BM[0];
         const node = { id: 'n' + Date.now() + Math.random().toString(36).slice(2, 6), parentId, title, url };
@@ -76,6 +97,16 @@
       },
       onCreated: noop, onRemoved: noop, onChanged: noop, onMoved: noop,
     },
+    search: {
+      // The real API hands the text to the user's default engine and returns
+      // nothing. There is no default engine out here, so the call is recorded
+      // and surfaced instead of navigating.
+      query: async ({ text, disposition }) => {
+        console.log("[stub] chrome.search.query", { text, disposition });
+        window.__lastSearch = { text, disposition };
+      },
+    },
+
     topSites: { get: cb => {
       const r = [
         { title: 'GitHub', url: 'https://github.com' },

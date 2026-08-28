@@ -1,7 +1,6 @@
 // Ctrl/Cmd+K command palette: bookmarks, history, open tabs, and actions.
-import { $, el, hostOf, clamp, debounce, toast, openIncognito } from './util.js';
+import { $, el, hostOf, clamp, debounce, toast, openIncognito, webSearch } from './util.js';
 import { iconElement } from './icons.js';
-import { ENGINES } from './config.js';
 import { S, set } from './state.js';
 import { attachSheen } from './theme.js';
 
@@ -74,17 +73,15 @@ export function initPalette() {
       out.push(...hist.filter(h => h.url).slice(0, 6)
         .map(h => ({ tag: 'history', title: h.title || hostOf(h.url), url: h.url })));
 
-      const engineId = ENGINES[S.searchIncognitoEngine] ? S.searchIncognitoEngine : S.searchEngine;
+      // No engine name, and no URL: this row hands the text to Chrome, which
+      // sends it to the engine the user actually chose. See webSearch.
+      // The private-search row that used to sit under this one is gone — it
+      // could only work by naming an engine itself. "Open a private window" is
+      // still in COMMANDS above.
       out.push({
         tag: 'search', icon: '⌕',
-        title: `Search ${ENGINES[S.searchEngine].name} for “${q}”`,
-        url: ENGINES[S.searchEngine].url.replace('%s', encodeURIComponent(q)),
-      });
-      out.push({
-        tag: 'private', icon: '◐',
-        title: `Search ${ENGINES[engineId].name} for “${q}” privately`,
-        url: ENGINES[engineId].url.replace('%s', encodeURIComponent(q)),
-        incognito: true,
+        title: `Search for “${q}”`,
+        run: () => webSearch(q),
       });
     }
 

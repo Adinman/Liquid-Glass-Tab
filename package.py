@@ -280,6 +280,61 @@ def check_locales():
             fail(f"LOCALES lists '{lid}' but js/locales/{lid}.js is missing")
 
 
+def check_translate_not_shadowed():
+    """No file may rebind `t` if it imports the translate function of that name.
+
+    This is not style. The 1.3.0 translation pass wrapped user-facing strings in
+    t(), and at three call sites `t` was already a local — a DOM input, a null,
+    a task object. Calling those threw, and because each throw happened while a
+    panel was being built, the panel came out empty rather than merely
+    untranslated: the whole Data settings tab, the countdown widget with no date
+    set, and the to-do widget as soon as it held one task. Nothing in the build
+    noticed, because the files parse perfectly.
+
+    The rule is deliberately blunt — ban the name outright in these files rather
+    than try to work out which shadows are reachable — because the next person
+    wrapping a string cannot be expected to check the enclosing scope first.
+    """
+    NOT_WORD = "(?![A-Za-z0-9_$])"
+    imports_t = re.compile(
+        "^import [{][^}]*t" + NOT_WORD + "[^}]*[}] from '[^']*i18n[.]js'", re.M)
+    # The other failure mode, and the one that actually shipped: a rename that
+    # renamed the binding but not every use of it. Those references do not
+    # become undefined — they resolve to the imported translate function — so
+    # `t.url` is quietly undefined and `new URL(t.url)` throws at the click.
+    # `t` is a function; a property access on it is a leftover in every real
+    # case, so the rule is the same blunt shape as the one below.
+    uses_t_as_object = re.compile("(?:^|[^A-Za-z0-9_$.'\"])t[.][A-Za-z_$]")
+    binds_t = re.compile(
+        "(?:(?:const|let|var)[ ]+t" + NOT_WORD + "(?![ ]*:))"
+        "|(?:[(][ ]*t[ ]*[)][ ]*=>)"
+        "|(?:(?:^|[^A-Za-z0-9_$.])t[ ]*=>)"
+        "|(?:[.](?:map|filter|forEach|find|some|every)[(][ ]*t" + NOT_WORD + ")"
+        "|(?:for[ ]*[(][ ]*(?:const|let|var)[ ]+t" + NOT_WORD + ")"
+        "|(?:catch[ ]*[(][ ]*t[ ]*[)])")
+    for dirpath, _dirs, names in os.walk(os.path.join(ROOT, 'js')):
+        if os.path.basename(dirpath) == 'locales':
+            continue
+        for name in sorted(names):
+            if not name.endswith('.js'):
+                continue
+            full = os.path.join(dirpath, name)
+            with open(full, encoding='utf-8') as fh:
+                src = fh.read()
+            if not imports_t.search(src):
+                continue
+            rel = os.path.relpath(full, ROOT).replace(os.sep, '/')
+            for i, line in enumerate(src.splitlines(), 1):
+                if binds_t.search(line):
+                    problems.append(
+                        f"{rel}:{i} binds `t`, shadowing the imported translate "
+                        f"function: {line.strip()[:70]}")
+                if uses_t_as_object.search(line):
+                    problems.append(
+                        f"{rel}:{i} reads a property off `t`, the translate "
+                        f"function \u2014 a leftover from a rename: {line.strip()[:70]}")
+
+
 def main():
     files = collect()
     m = check_manifest()
@@ -288,6 +343,7 @@ def main():
     check_assets_present(files)
     check_arcade_registry()
     check_locales()
+    check_translate_not_shadowed()
     check_no_dev_references(files)
 
     for w in warnings:

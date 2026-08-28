@@ -116,18 +116,26 @@ export const ARCADE = [
       { id: 'large', name: 'Large', cols: 32, rows: 20 },
     ] },
   { id: 'game3', name: 'Game 3',
-    blurb: 'Endless rally against the computer, on the arrow keys. It speeds up.',
-    score: 'Best rally' },
+    blurb: 'Rally against the computer, or against someone next to you.',
+    score: 'Best rally',
+    // `levels` is the general per-game variant list — for Game 3 the variants
+    // are opponents rather than difficulties, which is why the panel above the
+    // rows is labelled "opponent". Reusing the field means the picker, the
+    // per-variant records and their validation all work unchanged.
+    //
+    // Two records, because they measure different things: a rally against the
+    // computer is a test of your reflexes, and a rally against a person is a
+    // test of both of yours. One number for both would mean neither.
+    levels: [
+      { id: 'ai', name: 'Computer' },
+      { id: 'friend', name: 'Friend' },
+    ] },
 ];
 
-export const ENGINES = {
-  google:     { name: 'Google',     url: 'https://www.google.com/search?q=%s' },
-  duckduckgo: { name: 'DuckDuckGo', url: 'https://duckduckgo.com/?q=%s' },
-  bing:       { name: 'Bing',       url: 'https://www.bing.com/search?q=%s' },
-  brave:      { name: 'Brave',      url: 'https://search.brave.com/search?q=%s' },
-  youtube:    { name: 'YouTube',    url: 'https://www.youtube.com/results?search_query=%s' },
-  perplexity: { name: 'Perplexity', url: 'https://www.perplexity.ai/search?q=%s' },
-};
+/* There is no engine table here any more, and there must not be one again.
+   Searches go through chrome.search.query (see webSearch in util.js), which
+   uses the engine the user chose in Chrome. A hardcoded `?q=` URL anywhere in
+   this extension is the exact thing the Web Store rejected 1.3.0 for. */
 
 export const FEEDS = [
   { id: 'bbc',    name: 'BBC',        url: 'https://feeds.bbci.co.uk/news/world/rss.xml',      on: true },
@@ -332,8 +340,14 @@ export const DEFAULTS = {
 
   // behaviour
   widgetScaleMode: 'window',   // 'window' shrinks widgets to fit a small window, 'fixed' never does
+  // Overrides the expensive settings without touching them, so turning it off
+  // restores whatever the user had. See css/perf.css for what it covers.
+  lowPerf: false,
+  // Only what the user has actually changed. An absent id means "still the
+  // default", so a new shortcut added in a later version arrives bound rather
+  // than blank for everyone who has ever opened this panel. See js/keys.js.
+  keys: {},
   editMode: false,
-  searchEngine: 'google',
   suggestions: true,
   userName: '',
   temperatureUnit: 'celsius',
@@ -345,10 +359,6 @@ export const DEFAULTS = {
   // location (weather)
   place: null,              // {name, lat, lon, country}
   weatherPrivacy: 'hidden', // full | country | hidden — decreasing specificity
-
-  // private search
-  searchIncognito: false,   // search bar opens results in a private window
-  searchIncognitoEngine: '', // '' = whichever engine is normally selected
 
   // news
   feeds: FEEDS,

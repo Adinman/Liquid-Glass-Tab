@@ -1,13 +1,14 @@
 // The settings drawer. Every control writes straight to state and re-applies.
 import { $, el, toast, dropCache, debounce, clamp } from './util.js';
-import { WALLPAPERS, ENGINES, WIDGET_META, DEFAULTS, HOLIDAYS,
+import { WALLPAPERS, WIDGET_META, DEFAULTS, HOLIDAYS,
          WIDGET_SIZE, PHOTOS, CLIPS, BG_PREFIX, bgThumb,
          ARCADE } from './config.js';
 import { countdownTarget } from './widgets/core.js';
 import { S, set, setWidget, resetAll, exportSettings, importSettings,
          isHttpURL, bestScore, levelFor } from './state.js';
 import { applyTheme, applyVideoWallpaper, cssImageURL,
-         invalidateLocalImage, invalidateLocalVideo, clearLocalPoster } from './theme.js';
+         invalidateLocalImage, invalidateLocalVideo, clearLocalPoster,
+         clearStillThumb } from './theme.js';
 import { putBlob, getBlob, delBlob, storageEstimate, fmtBytes,
          WALLPAPER_IMAGE_KEY, WALLPAPER_VIDEO_KEY } from './media.js';
 import { audio } from './audio.js';
@@ -18,6 +19,8 @@ import { searchPlaces, detectPlace } from './widgets/index.js';
 import * as sp from './spotify.js';
 import { play, drawPreview } from './arcade.js';
 import { t, changeLocale, wanted } from './i18n.js';
+import { ACTIONS, DEFAULT_KEYS, bindingFrom, bindingProblem, conflictWith,
+         keyLabel, resolve as resolveKey } from './keys.js';
 import { LOCALES } from './locales/index.js';
 
 let rebuild = () => {};
@@ -34,6 +37,7 @@ const TABS = {
   news: 'News',
   music: 'Music',
   data: 'Data',
+  keys: 'Shortcuts',
 };
 
 /* ---------- control factories ---------- */
@@ -56,6 +60,97 @@ function toggle(key, after) {
     applyTheme(); after?.();
   });
   return sw;
+}
+
+/** One rebindable shortcut: a chip showing the current keys, which becomes a
+ *  capture field when clicked.
+ *
+ *  The capture listener is on window in the capture phase so it runs before
+ *  anything else — otherwise pressing the key you are trying to bind would
+ *  also *do* the thing, and binding "open settings" would close the drawer you
+ *  are standing in. stopPropagation is what keeps that from happening. */
+function keyBinder(action) {
+  const chip = el('button', { class: 'btn key-chip', type: 'button' });
+  const clear = el('button', {
+    class: 'icon-btn key-clear', type: 'button', text: '✕',
+    title: t('Unbind this shortcut'),
+    onclick: async () => { await save(''); },
+  });
+  const reset = el('button', {
+    class: 'icon-btn key-reset', type: 'button', text: '↺',
+    title: t('Back to the default'),
+    onclick: async () => { await save(undefined); },
+  });
+  const wrap = el('div', { class: 'key-cell' }, chip, clear, reset);
+
+  const paint = () => {
+    const b = resolveKey(S.keys, action.id);
+    chip.textContent = keyLabel(b);
+    chip.classList.toggle('unset', !b);
+    chip.title = t('Click, then press the keys you want');
+    // Both buttons are hidden rather than removed, so the rows stay the same
+    // width and the chips stay in a column. Each appears only when it has
+    // something to do: nothing to clear when the shortcut is already unbound,
+    // nothing to reset when it is already the default.
+    clear.style.visibility = b ? 'visible' : 'hidden';
+    reset.style.visibility = S.keys?.[action.id] === undefined ? 'hidden' : 'visible';
+  };
+
+  let capturing = false;
+  const stop = () => {
+    if (!capturing) return;
+    capturing = false;
+    window.removeEventListener('keydown', onKey, true);
+    chip.classList.remove('capturing');
+    paint();
+  };
+
+  async function save(binding) {
+    const next = { ...S.keys };
+    // undefined means "back to the default", and a value equal to the default
+    // is the same thing — storing it would pin this action to today's default
+    // if the default ever changed.
+    if (binding === undefined || binding === DEFAULT_KEYS[action.id]) delete next[action.id];
+    else next[action.id] = binding;
+    await set({ keys: next });
+    stop();
+    draw();
+  }
+
+  async function onKey(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.key === 'Escape') { stop(); return; }
+    if (e.key === 'Backspace' || e.key === 'Delete') { await save(''); return; }
+
+    const b = bindingFrom(e);
+    if (!b) return;                       // a modifier held on its own — keep waiting
+
+    const problem = bindingProblem(b);
+    if (problem) { toast(t(problem)); return; }        // stay in capture, try again
+
+    const clash = conflictWith(S.keys, b, action.id);
+    if (clash) {
+      const other = ACTIONS.find(x => x.id === clash);
+      toast(t('{key} is already {action}.', { key: keyLabel(b), action: t(other.label) }));
+      return;
+    }
+    await save(b);
+  }
+
+  chip.addEventListener('click', () => {
+    if (capturing) { stop(); return; }
+    capturing = true;
+    chip.classList.add('capturing');
+    chip.textContent = t('Press a key…');
+    window.addEventListener('keydown', onKey, true);
+    // Losing focus without a keypress should not leave the row stuck saying
+    // "Press a key…" forever.
+    chip.addEventListener('blur', stop, { once: true });
+  });
+
+  paint();
+  return wrap;
 }
 
 function slider(key, min, max, step = 1, after) {
@@ -350,27 +445,43 @@ const PANELS = {
       row(t('Show seconds'), toggle('showSeconds', rebuild)),
       row(t('Clock size'), slider('clockSize', 40, 140, 2)),
     ),
-    group(t('Private search'),
-      row('Search privately by default', toggle('searchIncognito', rebuild)),
-      row('Engine for private searches', select('searchIncognitoEngine',
-        { '': 'Same as normal', ...Object.fromEntries(Object.entries(ENGINES).map(([k, v]) => [k, v.name])) },
-        rebuild)),
-      el('div', { class: 'hint', style: { lineHeight: 1.55 } },
-        'Results open in a private window instead of this tab. The ◐ button in '
-        + 'the search bar toggles it, Ctrl+Enter does it once without toggling, '
-        + 'and I opens an empty private window. Some people prefer a different '
-        + 'engine for these — DuckDuckGo, say — which is what the second setting '
-        + 'is for.'),
-    ),
     group(t('Search'),
-      row(t('Search engine'), select('searchEngine', Object.fromEntries(
-        Object.entries(ENGINES).map(([k, v]) => [k, v.name])), rebuild)),
       row(t('Live suggestions'), toggle('suggestions'), 'Queries go to DuckDuckGo’s autocomplete endpoint as you type.'),
+      el('div', { class: 'hint', style: { lineHeight: 1.55 } },
+        'Searches go to whichever engine Chrome itself is set to use. To change '
+        + 'it, open Chrome’s settings and look under Search engine — this box '
+        + 'follows whatever you pick there, and so does the address bar, so the '
+        + 'two can no longer disagree. CGT used to keep its own list, which meant '
+        + 'a new tab could quietly send you somewhere you had not chosen.'),
+      el('div', { class: 'hint', style: { lineHeight: 1.55 } },
+        'The ◐ button beside the search box opens an empty private window, and '
+        + 'so does pressing I.'),
     ),
   ],
 
   glass: () => [
+    group(t('Performance'),
+      row(t('Low performance mode'), toggle('lowPerf', () => {
+        applyDockSettings();     // the magnify loop reads this on its next frame
+        draw();                  // the drawer's own re-render, so the note below
+                                 // appears now rather than next time it is opened.
+                                 // `rebuild` is the widget layout, which is a
+                                 // different thing and does not need rebuilding.
+      })),
+      el('div', { class: 'hint', style: { lineHeight: 1.55 } },
+        'For older or slower machines. Panels turn solid instead of frosted, the '
+        + 'background stops drifting, a live wallpaper holds on its first frame, '
+        + 'and the dock stops magnifying.'),
+      el('div', { class: 'hint', style: { lineHeight: 1.55 } },
+        'Nothing below is changed. These settings are overridden while the mode '
+        + 'is on and come back exactly as you left them when you turn it off.'),
+    ),
     group(t('Glass material'),
+      // Sliders that currently do nothing look broken. Saying so costs one line
+      // and is the difference between "this setting is dead" and "I turned this
+      // off myself a minute ago".
+      ...(S.lowPerf ? [el('div', { class: 'hint', style: { lineHeight: 1.55 } },
+        t('Low performance mode is on, so these are not in effect right now.'))] : []),
       row(t('Backdrop blur'), slider('blur', 0, 40, 1)),
       row(t('Saturation'), slider('saturation', 100, 300, 5)),
       row(t('Brightness'), slider('brightness', 80, 140, 1)),
@@ -702,16 +813,19 @@ const PANELS = {
       }), z.tz)),
       (() => {
         const l = el('input', { type: 'text', placeholder: 'Label' });
-        const t = el('input', { type: 'text', placeholder: 'Area/City (IANA)' });
+        // Not `t`: this file imports t() from i18n, and a local of that name
+        // shadows it. t('Add clock') below then called this <input>, which
+        // threw while the Data tab was being built and left the tab blank.
+        const tz = el('input', { type: 'text', placeholder: 'Area/City (IANA)' });
         return el('div', {},
-          row('Label', l), row('Time zone', t),
+          row('Label', l), row('Time zone', tz),
           row('', el('button', {
             class: 'btn', text: t('Add clock'),
             onclick: async () => {
-              if (!l.value.trim() || !t.value.trim()) return toast('Fill both fields');
-              try { new Date().toLocaleString(undefined, { timeZone: t.value.trim() }); }
+              if (!l.value.trim() || !tz.value.trim()) return toast('Fill both fields');
+              try { new Date().toLocaleString(undefined, { timeZone: tz.value.trim() }); }
               catch { return toast('Unknown time zone'); }
-              await set({ worldClocks: [...S.worldClocks, { label: l.value.trim(), tz: t.value.trim() }] });
+              await set({ worldClocks: [...S.worldClocks, { label: l.value.trim(), tz: tz.value.trim() }] });
               draw(); rebuild();
             },
           })));
@@ -731,8 +845,8 @@ const PANELS = {
           Object.fromEntries(Object.entries(HOLIDAYS).map(([id, h]) => [id, h.name])), rebuild)),
       ]),
       row('Next', el('span', { class: 'faint', style: { fontSize: '12px' }, text: (() => {
-        const t = countdownTarget();
-        return t ? t.date.toLocaleDateString(undefined,
+        const next = countdownTarget();
+        return next ? next.date.toLocaleDateString(undefined,
           { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' }) : 'not set';
       })() }))),
     group(t('Crypto'),
@@ -799,6 +913,25 @@ const PANELS = {
       }),
     ),
   ],
+
+  keys: () => [
+    group(t('Shortcuts'),
+      ...ACTIONS.map(a => row(t(a.label), keyBinder(a))),
+      el('div', { class: 'hint', style: { lineHeight: 1.55 } },
+        'Click a shortcut, then press the keys you want. Escape leaves it '
+        + 'alone. ✕ unbinds it, ↺ puts the default back, and a shortcut showing '
+        + '— has no key: it does nothing until you give it one.'),
+      el('div', { class: 'hint', style: { lineHeight: 1.55 } },
+        'A shortcut without Ctrl or Alt is ignored while you are typing in a '
+        + 'box, so a plain letter cannot fire mid-sentence. Escape, Tab, Enter, '
+        + 'Space and the arrow keys are not available — they already move focus '
+        + 'and work the dock, and taking one would leave no way back.'),
+      row('', el('button', {
+        class: 'btn', text: t('Reset shortcuts'),
+        onclick: async () => { await set({ keys: {} }); draw(); toast(t('Shortcuts reset')); },
+      })),
+    ),
+  ],
 };
 
 /* ---------- visualizer audio source ----------
@@ -848,35 +981,35 @@ function vizSourceControls() {
   (async () => {
     let tabs = [];
     try {
-      tabs = (await chrome.tabs.query({ audible: true })).filter(t => /^https?:/.test(t.url || ''));
+      tabs = (await chrome.tabs.query({ audible: true })).filter(x => /^https?:/.test(x.url || ''));
     } catch { /* no tabs permission in preview */ }
     if (!tabs.length) {
       tabList.append(el('div', { class: 'hint', text: 'Tab audio: no tab is playing sound right now.' }));
       return;
     }
     tabList.append(el('div', { class: 'hint', style: { marginBottom: '5px' }, text: 'Or capture a tab that’s playing:' }));
-    for (const t of tabs) {
+    for (const tab of tabs) {
       tabList.append(el('button', {
         class: 'btn',
         style: { display: 'block', width: '100%', textAlign: 'left', marginBottom: '4px' },
-        text: '▶ ' + (t.title || t.url).slice(0, 46),
-        title: t.url,
+        text: '▶ ' + (tab.title || tab.url).slice(0, 46),
+        title: tab.url,
         onclick: async () => {
           // tabCapture needs access to that tab; ask for just its origin.
           try {
-            const origin = new URL(t.url).origin + '/*';
+            const origin = new URL(tab.url).origin + '/*';
             const has = await chrome.permissions.contains({ origins: [origin] });
             if (!has && !(await chrome.permissions.request({ origins: [origin] }))) {
               return toast('Permission denied for that site.');
             }
           } catch { /* fall through and let getMediaStreamId report */ }
 
-          const res = await chrome.runtime.sendMessage({ type: 'lgt:tabStreamId', targetTabId: t.id });
+          const res = await chrome.runtime.sendMessage({ type: 'lgt:tabStreamId', targetTabId: tab.id });
           if (!res?.streamId) {
             toast('Tab capture failed: ' + (res?.error || 'no stream id') + ' — try System audio.');
             return draw();
           }
-          const ok = await audio.useTab(res.streamId, t.title || 'Tab audio');
+          const ok = await audio.useTab(res.streamId, tab.title || 'Tab audio');
           if (ok) await set({ vizSource: 'tab' });
           else toast(audio.error || 'Could not capture that tab.');
           draw();
@@ -924,7 +1057,7 @@ function bulkImportControls() {
     renderDock();
   };
 
-  const busy = t => { status.textContent = t; };
+  const busy = msg => { status.textContent = msg; };
 
   const fileBtn = el('button', {
     class: 'btn', text: t('Choose bookmarks file…'),
@@ -1409,6 +1542,7 @@ async function storeWallpaper(file) {
 
 async function clearImage() {
   await delBlob(WALLPAPER_IMAGE_KEY).catch(() => {});
+  clearStillThumb();
   await set({ wallpaperCustom: '' });
   applyTheme(); draw(); toast(t('Wallpaper cleared'));
 }

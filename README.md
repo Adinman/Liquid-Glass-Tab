@@ -299,29 +299,157 @@ and re-lay out at the new scale rather than being stretched, so text stays
 sharp at any size, and the quote widget's reserved two lines stay two lines
 because the ratio of text size to panel width never changes.
 
-### Private search
+### Shortcuts, and changing them
 
-Four ways in, because the whole point is that it's quicker than opening a
-private window yourself:
+**⚙ → Shortcuts.** Every keyboard shortcut, what it does, and what it is bound
+to. Click one, press the keys you want, done. Backspace clears a shortcut,
+Escape leaves it alone, and ↺ next to a changed one puts the default back.
 
-- **The ◐ button** in the search bar arms it. It stays lit in the accent colour
-  so "will this search go somewhere private?" is answerable at a glance, and the
-  placeholder changes to *Search … privately*.
-- **<kbd>Ctrl</kbd>+<kbd>Enter</kbd>** in the search bar does it once, without
-  arming the toggle.
-- **<kbd>I</kbd>** opens an empty private window.
-- **<kbd>Ctrl</kbd>+<kbd>Enter</kbd>** on any command-palette result — a
-  bookmark, a history entry, a search — opens that privately instead. The
-  palette also lists *Search … privately* and *Open a private window*
-  outright, and right-clicking a dock bookmark offers **Private**.
+| Action | Default |
+|---|---|
+| Command palette | <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>K</kbd> |
+| Jump to the search box | <kbd>/</kbd> |
+| Open settings | <kbd>,</kbd> |
+| Edit mode | <kbd>E</kbd> |
+| Next wallpaper | <kbd>W</kbd> |
+| Hide or show the dock | <kbd>B</kbd> |
+| Open a private window | <kbd>I</kbd> |
+| List these shortcuts | <kbd>?</kbd> |
+| Next homescreen | *unbound* |
+| Low performance mode | *unbound* |
 
-**⚙ → Look → Private search** has both settings: whether to search privately by
-default, and which engine to use when you do. That second one defaults to
-*Same as normal*, and exists because plenty of people want DuckDuckGo for
-private searches while keeping Google for everything else.
+**The last two ship with no key.** They are real actions — cycling homescreens
+and the low performance toggle — that simply had no shortcut before, and an
+empty default is a decision rather than an oversight: inventing a key for
+something nobody asked for takes that key away from everyone, while leaving it
+blank costs nothing and puts the choice with you. They show a **—** and do
+nothing at all until you give them one.
 
-Results open in a new private window rather than this tab, so the tab you're on
-stays where it is.
+**Any shortcut can be left unbound**, not just those two. **✕** clears one,
+Backspace does the same while capturing, and **↺** puts the default back. An
+unbound action disappears from the <kbd>?</kbd> list too, because that list is
+built from what is actually bound.
+
+**Only what you changed is stored.** An action you have never touched has no
+entry at all, which is what lets a default change in a later version reach you
+instead of pinning you to whatever it was the first time you opened this panel.
+Setting a shortcut back to its default deletes the entry rather than writing it.
+
+**Ctrl and ⌘ are one key here.** A binding records `mod`, not one or the other,
+so a shortcut set on a Mac still works on Windows and the reverse. Shift is
+different: on a bare key the character already carries it — <kbd>?</kbd> *is*
+Shift+<kbd>/</kbd> — so recording it again would describe the same press twice.
+Once Ctrl or Alt is held it goes back to being a real distinction, and
+<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Y</kbd> is stored as itself rather than
+being collapsed into <kbd>Ctrl</kbd>+<kbd>Y</kbd>.
+
+**A shortcut without Ctrl or Alt is ignored while you are typing.** Otherwise
+typing "web" into the search box would cycle the wallpaper and open a private
+window on the way past. Modifier shortcuts still work in a text field, which is
+why the command palette opens from anywhere.
+
+**Escape, Tab, Enter, Space and the arrow keys cannot be bound.** They already
+move focus and work the dock, so taking one would leave no way back — the panel
+says which and why rather than silently refusing.
+
+**A key can only do one thing.** Binding one that is already taken is refused
+with a message naming what has it, rather than quietly stealing it and leaving
+the other action dead.
+
+**<kbd>?</kbd> lists whatever is actually bound.** It used to print a fixed
+string, which was correct only for as long as the keys could not move.
+
+### Low performance mode
+
+**⚙ → Glass → Low performance mode.** One switch, for machines the glass is too
+much for. Panels turn solid instead of frosted, the background stops drifting, a
+live wallpaper holds on its first frame, and the dock stops magnifying.
+
+**It overrides, it never overwrites.** Blur, sheen, refraction, hover effect and
+animated background are all left exactly as they were in settings — the mode
+just stops honouring them while it is on, and they come back untouched the
+moment you turn it off. The Glass tab says so in place, so sliders that
+currently do nothing do not read as broken ones.
+
+What it actually switches off, in the order the cost was found:
+
+| | |
+|---|---|
+| **The drifting mesh** | Four blobs 46vw across under `filter: blur(70px)`, animating forever |
+| **Panel backdrops** | `backdrop-filter` on every glass panel — 14 visible ones on a default layout |
+| **Refraction** | The `feImage` + `feDisplacementMap` pass, per panel per frame |
+| **The live wallpaper** | Never fetched or decoded at all — see below |
+| **The dock's magnify loop** | A `requestAnimationFrame` loop writing a transform to every icon |
+| **The visualiser** | Halved to 30fps rather than switched off — it is a widget you turned on |
+
+**The mesh is first for a reason, and it is not the obvious one.** On its own it
+is one full-screen blurred layer being recomposited. The real cost is
+second-order: every panel's `backdrop-filter` samples whatever is behind it, so
+a background that never stops moving forces all fourteen panels to re-run their
+own blur every frame too. The two multiply. Stopping the drift is the largest
+single saving and the cheapest to look at, because the mesh is still there — it
+just holds still.
+
+**A live wallpaper is never fetched, not merely paused.** `paintCachedWallpaper`
+starts the clip at module load, deliberately, before settings have been read —
+waiting for storage would leave the poster on screen through the read, the fetch
+and the first decode. That is also why checking the setting inside
+`applyVideoWallpaper` was not enough: by the time settings arrived the clip had
+already been fetched, decoded and played, and the mode only stopped it a moment
+later. On the machines this exists for, at the one moment they are busiest, that
+was the whole cost and none of the saving. The flag now rides in the wallpaper
+cache — the mechanism that already exists for deciding things before settings
+load — so with the mode on the clip is never requested. The wallpaper still
+looks like the clip, because the still layer is showing the clip's own first
+frame either way.
+
+**What it is not** is a reduced-motion setting. `prefers-reduced-motion` is
+handled separately in `css/base.css` and answers a different question — one is
+about what your machine can afford, the other about what you want to see move.
+Transitions on interaction are kept here on purpose: removing them makes an
+interface feel broken rather than fast.
+
+### Search goes to your engine, not ours
+
+Type a query and it goes to **whichever search engine Chrome is set to use** —
+the one in Chrome's own settings, the one the address bar uses. CGT has no say
+in it, cannot read it, and no longer offers a list of its own.
+
+That is a deliberate reduction. Up to 1.3.0 the extension carried a table of six
+engines and a picker in the search bar, and it navigated straight to the chosen
+one's results page. Anyone whose Chrome was set to Kagi, Ecosia or a work
+intranet still landed on Google, because a setting buried in a new tab page had
+quietly overruled the browser's. The Web Store rejected 1.3.0 for it — an
+extension may replace your new tab or change where your searches go, not both —
+and they were right to. Engine choice did not disappear; it moved to the one
+place that already governed every other search you make.
+
+Under the hood this is
+[`chrome.search.query`](https://developer.chrome.com/docs/extensions/reference/api/search),
+which hands the text to Chrome and lets Chrome route it. Two consequences worth
+knowing:
+
+- **Typing an address still works and is not a search.** `github.com/pulls`
+  navigates straight there, untouched — only text that isn't an address gets
+  handed over.
+- **To change engine, change it in Chrome** — Settings → Search engine. The box
+  follows immediately.
+
+### Private browsing
+
+- **The ◐ button** in the search bar opens an empty private window.
+- **<kbd>I</kbd>** does the same from anywhere on the page.
+- **<kbd>Ctrl</kbd>+<kbd>Enter</kbd>** on a command-palette result — a bookmark,
+  a history entry, an open tab — opens *that* privately. The palette lists
+  *Open a private window* outright, and right-clicking a dock bookmark offers
+  **Private**.
+
+**A private *search* is gone, and cannot come back.** It worked by building a
+results URL and opening it in an incognito window, which meant naming an engine
+— exactly the thing above. `chrome.search.query` has no incognito disposition,
+so there is no compliant way to carry a query into a private window. What
+survives is the half that never needed an engine: one click to a private window,
+where you can type whatever you were going to type.
 
 > Chromium calls this different things — Incognito in Chrome, InPrivate in
 > Edge, Private in Brave and Opera — but it's the same API, so this works in all
@@ -343,8 +471,17 @@ instantly — and you never have to touch the bookmarks bar to add one.
 - Anything you add to the bookmarks bar the normal way still shows up
 
 **Managing them:** right-click any dock item to rename it, change its URL, copy
-the link, or delete it. Drag items along the dock to reorder — that writes back
-to Chrome's real bookmark store. Middle-click opens in a background tab.
+the link, or delete it. Middle-click opens in a background tab.
+
+**Pick a bookmark up and put it anywhere in the dock.** Press and drag along the
+row and the icon lifts out of the glass; the others part around it as you go, so
+the gap under the cursor is where it lands — including either end. Let go and it
+is written back to Chrome's real bookmark store, so the new order is the one you
+see in the bookmarks bar and on every other device you sync to.
+
+It works the same on all four edges, dragging up and down when the dock is on a
+side. A press that does not travel is still a click, so opening a bookmark is
+unchanged.
 
 **Hover effects** — **⚙ → Dock → Hover effect**:
 
@@ -452,7 +589,7 @@ wallpaper rather than on a blank screen.
 |---|---|---|---|
 | **Game 1** | Clear a grid of mines. Clicking a satisfied number opens its remaining neighbours | Left-click reveals, **right-click flags** | Best **time**, on a win only, per size |
 | **Game 2** | Eat, grow, and don't bite yourself. It speeds up as you go | Arrow keys or WASD | Best **score**, per map size |
-| **Game 3** | Endless rally against the computer. It gets faster and more accurate the longer you last | <kbd>↑</kbd> <kbd>↓</kbd> or W/S | Best **rally** |
+| **Game 3** | Rally against the computer, or against someone sitting next to you | <kbd>↑</kbd> <kbd>↓</kbd> or W/S; in two-player, **W/S** and **↑ ↓** | Best **rally**, per opponent |
 
 **Games 1 and 2 have three sizes each**, picked on a panel beside the board
 **while you are playing** — not in settings. Difficulty is something you change
@@ -528,6 +665,21 @@ most at the moment it stops mattering to the game: when you have just died and
 are looking at a still frame working out what happened. Two dark dots barely off
 centre, on a body of one flat colour, left the head indistinguishable from the
 tail.
+
+**Game 3 has a second player.** Pick the opponent on the same panel the other
+two games use for their size — **Computer** or **Friend**. Against a friend the
+left bat is **W/S** and the right is **↑ ↓**, which is the split the keyboard
+already gives two people sitting at it. There is no online mode and none is
+planned; this is two people at one desk.
+
+The two opponents score differently, because they are not the same game. Alone
+it stays an endless rally: one number that can always go up, which is what makes
+an all-time best worth chasing. Two people want to beat each other rather than a
+number, so that is a match to seven, and what it files as a record is the
+**longest rally of the match** — a measure of the two of you rather than of one.
+The records are kept apart for the same reason: a rally against the computer
+tests your reflexes, a rally against a person tests both of yours, and one
+number for both would mean neither.
 
 **Game 2 is drawn as one connected body**, stroked along the cell centres with
 round joins rather than one rounded square per cell — the per-cell version left
@@ -719,6 +871,11 @@ always been fully keyboard-driven.
 
 ### Keyboard shortcuts
 
+**These are the defaults.** Every one of them can be changed in
+**⚙ → Shortcuts** — see [Shortcuts, and changing them](#shortcuts-and-changing-them).
+Press <kbd>?</kbd> at any time for the list as it currently stands, which is
+built from what is actually bound rather than from this table.
+
 | Key | Action |
 |---|---|
 | <kbd>Ctrl</kbd>+<kbd>K</kbd> | Command palette — bookmarks, history, open tabs, commands |
@@ -754,6 +911,7 @@ only to the services you use:
 | Spotify | Playback + control | OAuth token |
 | LRCLIB | Lyrics | Artist, title, duration |
 | DuckDuckGo | Search suggestions | Your query as you type (disable in ⚙ → Look) |
+| Your own search engine | The search itself | Handled by Chrome, which sends the query wherever you have told it to |
 | CoinGecko | Crypto prices | Coin IDs |
 | Your RSS feeds | Headlines | Nothing |
 | The bookmarked site itself | Sharp icon (`/apple-touch-icon.png`) | A plain image request |
@@ -966,6 +1124,29 @@ quantisation error against the old 512² map is 0.33 px worst case — invisible
 128² comes to 0.99 px, which is on the edge; 64² breaks down at 2.14 px with
 11% of samples over a pixel. 256² has a 3× margin. Note the decoded cost is
 what matters, not the file: the 512² map was 1 MB decoded from an 11 KB string.
+
+**An uploaded image gets the same treatment, for the same reason.** It lives in
+IndexedDB, which cannot be read before the first paint, so `early.js` had
+nothing to show and fell back to the gradient underneath — every new tab flashed
+a colour preset on a wallpaper the user had explicitly replaced with a
+photograph. A downscaled WebP copy now goes into `localStorage` alongside the
+video poster, `early.js` paints that, and the full image replaces it from
+IndexedDB a few milliseconds later. The copy is cleared whenever the stored
+image is replaced or deleted, so a present one always belongs to the image
+actually showing.
+
+A **remote image URL** had a worse version of the same bug: it was cached, but
+`early.js` had no branch for it at all, so the first paint was the stylesheet's
+own default — a gradient the user had never chosen. It now paints the URL,
+matched against a pattern deliberately narrower than "a URL": the value is
+interpolated into `url("…")`, so a quote, backslash, parenthesis or space could
+close the function and inject a further declaration.
+
+The cache also carries the gradient underneath as a last resort now. Every
+specific source above can come up empty on a given tab — a thumbnail not
+captured yet, a URL that fails its check — and without a fallback `early.js`
+lands on the stylesheet default, which is the one wallpaper that is certainly
+wrong.
 
 **While a clip plays, the still layer shows the clip's own first frame.**
 `#wp-video` sits above `#wp-image` at opacity 0 and only fades in once it has

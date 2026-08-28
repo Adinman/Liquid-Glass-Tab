@@ -1,5 +1,6 @@
 // Settings state: load, patch, persist, notify.
-import { DEFAULTS, ENGINES, WIDGET_SIZE, PHOTOS, CLIPS, ARCADE, bundled } from './config.js';
+import { DEFAULTS, WIDGET_SIZE, PHOTOS, CLIPS, ARCADE, bundled } from './config.js';
+import { ACTIONS, isBindingShape } from './keys.js';
 import { LOCALES } from './locales/index.js';
 import { store } from './util.js';
 import { putBlob, WALLPAPER_IMAGE_KEY } from './media.js';
@@ -76,6 +77,7 @@ export async function loadSettings() {
   // Before dropRemovedKeys, which is what deletes pongBest.
   migratePongBest(saved);
   migrateGame2Levels(saved);
+  migrateGame3Modes(saved);
   await dropRemovedKeys();
   await migrateWallpaperImage();
   return S;
@@ -105,8 +107,8 @@ async function dropRemovedKeys() {
 function migratePongBest(saved) {
   const old = Number(saved?.pongBest);
   if (!Number.isFinite(old) || old <= 0) return;
-  if (S.arcadeBest?.game3) return;              // already carried, or beaten since
-  S.arcadeBest = { ...(S.arcadeBest || {}), game3: Math.min(1e6, old) };
+  if (S.arcadeBest?.['game3.ai']) return;       // already carried, or beaten since
+  S.arcadeBest = { ...(S.arcadeBest || {}), 'game3.ai': Math.min(1e6, old) };
 }
 
 /** Game 2's levels were briefly named after Game 1's — easy/medium/hard, which
@@ -133,6 +135,18 @@ function migrateGame2Levels(saved) {
   const lvl = saved?.arcadeLevels?.game2;
   const swap = { easy: 'large', hard: 'small' }[lvl];
   if (swap) S.arcadeLevels = { ...(S.arcadeLevels || {}), game2: swap };
+}
+
+/** Game 3 gained a second opponent, so its record split in two: the bare
+ *  `game3` key became `game3.ai`. Everything anyone has ever scored was against
+ *  the computer, so it all belongs on that side of the split.
+ *
+ *  Safe to delete once no stored settings can still carry the bare key. */
+function migrateGame3Modes(saved) {
+  const old = Number(saved?.arcadeBest?.game3);
+  if (!Number.isFinite(old) || old <= 0) return;
+  if (S.arcadeBest?.['game3.ai']) return;      // already carried, or beaten since
+  S.arcadeBest = { ...(S.arcadeBest || {}), 'game3.ai': Math.min(1e6, old) };
 }
 
 /** Uploaded wallpapers used to live in the settings object as base64 data
@@ -287,14 +301,25 @@ export const isHttpURL = u => {
  *  to http(s) here rather than trusted and checked later. */
 function sanitize(s) {
   if (Array.isArray(s.feeds)) {
+    // Ids have to be unique: the news cache is keyed by them, so two feeds
+    // sharing one means each shows whatever the other fetched last. The old
+    // fallback was `'c' + Date.now()`, which is the SAME value for every feed
+    // in the array — a single import missing ids collapsed them all onto one
+    // cache entry. An imported file can also simply repeat an id outright.
+    const usedIds = new Set();
     s.feeds = s.feeds
       .filter(f => f && typeof f === 'object' && isHttpURL(f.url))
-      .map(f => ({
-        id: String(f.id ?? 'c' + Date.now()),
-        name: String(f.name ?? 'Feed').slice(0, 80),
-        url: String(f.url),
-        on: !!f.on,
-      }));
+      .map((f, i) => {
+        let id = String(f.id ?? `c${i}`);
+        while (usedIds.has(id)) id += `_${i}`;
+        usedIds.add(id);
+        return {
+          id,
+          name: String(f.name ?? 'Feed').slice(0, 80),
+          url: String(f.url),
+          on: !!f.on,
+        };
+      });
   } else {
     s.feeds = structuredClone(DEFAULTS.feeds);
   }
@@ -324,12 +349,6 @@ function sanitize(s) {
       folderId: String(x.folderId ?? '1'),
     }));
 
-  // Search engines are looked up as ENGINES[id].url with no guard at the call
-  // sites, so an id that isn't in the table throws on every submit and leaves
-  // the search bar permanently broken. Two ways to get one: an imported
-  // settings file, and renaming an engine key in a future version while a
-  // stored value still points at the old name — the same shape as the
-  // dockHover and weatherPrivacy migrations above.
   // The language id reaches a dynamic import path, so it is checked against the
   // registry rather than trusted — an imported settings file must not be able
   // to name a module.
@@ -337,9 +356,30 @@ function sanitize(s) {
     s.language = 'auto';
   }
 
-  if (!ENGINES[s.searchEngine]) s.searchEngine = DEFAULTS.searchEngine;
-  // '' is meaningful here: it means "use whichever engine is normally selected".
-  if (s.searchIncognitoEngine && !ENGINES[s.searchIncognitoEngine]) s.searchIncognitoEngine = '';
+  s.lowPerf = !!s.lowPerf;
+
+  // Shortcut overrides. Same closed-key-set treatment as the arcade records
+  // above, and for the same reason: an imported settings file is untrusted, so
+  // only ids that are really in ACTIONS survive and '__proto__' and friends
+  // have nowhere to land. Values are checked for shape too — the string is
+  // compared against live keypresses, and one that could never match is worse
+  // than no override at all, because it silently unbinds the action.
+  {
+    const src = (s.keys && typeof s.keys === 'object' && !Array.isArray(s.keys)) ? s.keys : {};
+    const out = {};
+    for (const a of ACTIONS) {
+      const v = src[a.id];
+      // Only overrides are stored, so a value equal to the default is dropped
+      // rather than frozen — otherwise changing a default in a later version
+      // would leave everyone pinned to the old one.
+      if (isBindingShape(v) && v !== a.def) out[a.id] = v;
+    }
+    s.keys = out;
+  }
+
+  // searchEngine, searchIncognito and searchIncognitoEngine used to be checked
+  // here. They are gone rather than migrated: nothing reads them now, so an old
+  // stored value or an imported settings file naming a dead engine is inert.
 
   // Widget entries are the third thing an import reaches past the UI: `size`
   // becomes a CSS zoom on the panel, so an unchecked value is either NaN (the
@@ -395,8 +435,14 @@ function sanitize(s) {
     // No height requirement: the panel takes its height from the stylesheet
     // now, and entries written since then do not carry one at all. Demanding
     // it here would quietly wipe every position on load.
-    const okX = Number.isFinite(sp.fx) ? sp.fx >= 0 && sp.fx <= 1 : Number.isFinite(sp.x);
-    if (!okX || !Number.isFinite(sp.y)) s.settingsPos = null;
+    // A pixel offset has no natural ceiling the way a fraction does, so
+    // "finite" was the only test it ever got — and an imported file could park
+    // the settings drawer at y: 900000, where it is off screen with no control
+    // left to drag it back. The bound is deliberately generous: it is here to
+    // reject nonsense, not to second-guess a large monitor.
+    const sane = n => Number.isFinite(n) && Math.abs(n) <= 20000;
+    const okX = Number.isFinite(sp.fx) ? (sp.fx >= 0 && sp.fx <= 1) : sane(sp.x);
+    if (!okX || !sane(sp.y)) s.settingsPos = null;
   } else if (sp) {
     s.settingsPos = null;
   }
@@ -443,6 +489,7 @@ export async function importSettings(json) {
   // in the next export and be passed on to whoever got that file.
   migratePongBest(incoming);
   migrateGame2Levels(incoming);
+  migrateGame3Modes(incoming);
   await dropRemovedKeys();
   await migrateWallpaperImage();
   await flushNow();

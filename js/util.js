@@ -1,5 +1,32 @@
 // Small shared helpers. No dependencies, no remote code.
 
+/** Search, using whatever engine the user has set as their default in Chrome.
+ *
+ *  There is deliberately no way for this extension to override that or even to
+ *  read it, and that is the whole point. A new tab page that also decides where
+ *  your searches go is two products in one: the Web Store treats overriding the
+ *  new tab and changing the search provider as separate purposes, and rejected
+ *  1.3.0 for doing both. CGT used to carry its own table of six engines and
+ *  navigate straight to the chosen one's results page, so someone whose Chrome
+ *  was set to Kagi or Ecosia still landed on Google.
+ *
+ *  chrome.search.query is the sanctioned way to have a search box at all: hand
+ *  Chrome the text and let Chrome route it. Engine choice did not disappear —
+ *  it moved to Chrome's own settings, where it belonged. */
+export async function webSearch(text, disposition = 'CURRENT_TAB') {
+  const q = String(text ?? '').trim();
+  if (!q) return false;
+  try {
+    // Throws synchronously if the API is missing, which is why the whole call
+    // is inside the try rather than only the await.
+    await chrome.search.query({ text: q, disposition });
+    return true;
+  } catch {
+    toast('Could not run that search.');
+    return false;
+  }
+}
+
 export const $  = (sel, root = document) => root.querySelector(sel);
 export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
