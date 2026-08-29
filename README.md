@@ -367,6 +367,19 @@ the other action dead.
 **<kbd>?</kbd> lists whatever is actually bound.** It used to print a fixed
 string, which was correct only for as long as the keys could not move.
 
+### The focus timer is not fixed at 25/5/15
+
+**⚙ → Data → Focus timer.** Focus, short break and long break, in minutes.
+25/5/15 is one school of thought rather than a law — 52/17 and 45/15 have their
+own followings — and it was baked in three times over, down to the numbers
+printed on the timer's own buttons. Those buttons now read whatever you set.
+
+**A change reaches a timer already on screen**, without rebuilding the widget,
+because rebuilding would throw away a session that was counting down. The one
+exception is that session itself: shorten it while it runs and the clock is not
+moved under you, and the new length applies from the next one. Idle, the dial
+follows immediately.
+
 ### The calendar knows which day your week starts on
 
 **⚙ → Data → Calendar → Week starts on.** Automatic, Sunday, or Monday.

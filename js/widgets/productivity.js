@@ -1,6 +1,7 @@
 // Notes, to-do list, and a pomodoro focus timer.
 import { el, store, debounce, pad2, toast } from '../util.js';
 import { head } from './core.js';
+import { S, onChange } from '../state.js';
 import { t } from '../i18n.js';
 
 /* ============================ NOTES ============================ */
@@ -76,8 +77,13 @@ export const tasks = {
 export const pomodoro = {
   id: 'pomodoro', title: 'Focus', className: 'w-pomo',
   render(panel) {
-    const LEN = { focus: 25 * 60, short: 5 * 60, long: 15 * 60 };
-    let mode = 'focus', left = LEN.focus, running = false, done = 0, timer = null;
+    // Read live rather than captured, so changing a length in settings reaches
+    // a timer that is already on screen instead of waiting for a rebuild.
+    const MINUTES = { focus: 'pomoFocus', short: 'pomoShort', long: 'pomoLong' };
+    const mins = m => Math.max(1, Math.round(S[MINUTES[m]] ?? 25));
+    const lenOf = m => mins(m) * 60;
+
+    let mode = 'focus', left = lenOf('focus'), running = false, done = 0, timer = null;
 
     const mLabel = el('div', { class: 'pomo-mode', text: t('Focus') });
     const time = el('div', { class: 'lbl tabular' });
@@ -95,9 +101,12 @@ export const pomodoro = {
     const ring = el('div', { class: 'pomo-ring' }, svg, time);
     const startBtn = el('button', { class: 'btn primary', text: t('Start') });
     const resetBtn = el('button', { class: 'btn', text: t('Reset') });
+    // The numbers were part of the label text. They are part of the setting now,
+    // so the labels are written in draw() rather than here.
+    const CHIP = { focus: 'Focus', short: 'Break', long: 'Long' };
     const modes = el('div', { class: 'chips', style: { justifyContent: 'center', marginBottom: '8px' } },
-      ...[['focus', 'Focus 25'], ['short', 'Break 5'], ['long', 'Long 15']].map(([m, label]) =>
-        el('button', { class: 'pill', dataset: { m }, text: label, onclick: () => switchTo(m) })));
+      ...Object.keys(CHIP).map(m =>
+        el('button', { class: 'pill', dataset: { m }, onclick: () => switchTo(m) })));
     const stat = el('div', { class: 'faint', style: { fontSize: '11px', marginTop: '8px' } });
 
     panel.append(head('Focus timer'), mLabel, ring, modes,
@@ -105,14 +114,25 @@ export const pomodoro = {
 
     function draw() {
       time.textContent = `${Math.floor(left / 60)}:${pad2(left % 60)}`;
-      fg.style.strokeDashoffset = C * (1 - left / LEN[mode]);
+      // Clamped: shortening the session you are already in leaves `left` above
+      // the new total for a moment, and an unclamped ratio draws the ring past
+      // full and then inside out.
+      const frac = Math.min(1, Math.max(0, left / lenOf(mode)));
+      fg.style.strokeDashoffset = C * (1 - frac);
       mLabel.textContent = t({ focus: 'Focus', short: 'Short break', long: 'Long break' }[mode]);
-      startBtn.textContent = running ? 'Pause' : 'Start';
-      stat.textContent = done ? `${done} session${done > 1 ? 's' : ''} completed today` : '';
-      [...modes.children].forEach(b => b.classList.toggle('on', b.dataset.m === mode));
+      // These were the only two labels in the widget going out untranslated,
+      // even though every catalogue already carries both.
+      startBtn.textContent = running ? t('Pause') : t('Start');
+      stat.textContent = !done ? ''
+        : done === 1 ? t('1 session completed today')
+        : t('{n} sessions completed today', { n: done });
+      for (const b of modes.children) {
+        b.classList.toggle('on', b.dataset.m === mode);
+        b.textContent = `${t(CHIP[b.dataset.m])} ${mins(b.dataset.m)}`;
+      }
     }
 
-    function switchTo(m) { mode = m; left = LEN[m]; stop(); draw(); }
+    function switchTo(m) { mode = m; left = lenOf(m); stop(); draw(); }
     function stop() { running = false; clearInterval(timer); timer = null; draw(); }
 
     function start() {
@@ -144,7 +164,18 @@ export const pomodoro = {
     store.get('pomoDone', null).then(v => {
       if (v && v.d === new Date().toDateString()) { done = v.n; draw(); }
     });
+
+    // A length changed in settings should reach the dial without waiting for a
+    // rebuild — and a rebuild would throw away a session already counting down.
+    const offSettings = onChange(keys => {
+      if (!keys.includes('*') && !keys.some(k => k in MINUTES || k.startsWith('pomo'))) return;
+      // Mid-session the clock is not moved under you; the new length applies
+      // from the next one. Idle, the dial should show what was just chosen.
+      if (!running) left = lenOf(mode);
+      draw();
+    });
+
     draw();
-    return () => clearInterval(timer);
+    return () => { clearInterval(timer); offSettings(); };
   },
 };

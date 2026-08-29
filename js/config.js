@@ -358,6 +358,12 @@ export const DEFAULTS = {
   temperatureUnit: 'celsius',
   windUnit: 'kmh',
   clock24: false,
+  // Minutes. 25/5/15 is one school of thought, not a law — 52/17 and 45/15
+  // have their own followings, and the timer had all three baked in, down to
+  // the numbers printed on its own buttons.
+  pomoFocus: 25,
+  pomoShort: 5,
+  pomoLong: 15,
   // 'auto' asks Intl what this locale does. The calendar was Sunday-first for
   // everyone, which is wrong in most of the world and in most of the languages
   // this now ships in.

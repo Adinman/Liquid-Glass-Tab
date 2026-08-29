@@ -983,6 +983,15 @@ const PANELS = {
         return next ? next.date.toLocaleDateString(undefined,
           { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' }) : 'not set';
       })() }))),
+    group(t('Focus timer'),
+      row(t('Focus session'), number('pomoFocus', 1, 180)),
+      row(t('Short break'), number('pomoShort', 1, 60)),
+      row(t('Long break'), number('pomoLong', 1, 120)),
+      el('div', { class: 'hint', style: { lineHeight: 1.55 } },
+        'Minutes. A change reaches the timer straight away, except in the middle '
+        + 'of a session already counting down — that one finishes on the length '
+        + 'it started with.'),
+    ),
     group(t('Calendar'),
       row(t('Week starts on'), select('weekStart', {
         auto: 'Automatic', sun: 'Sunday', mon: 'Monday',

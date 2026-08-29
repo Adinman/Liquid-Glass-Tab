@@ -358,6 +358,12 @@ function sanitize(s) {
 
   s.lowPerf = !!s.lowPerf;
 
+  // Whole minutes, and bounded. These divide the progress ring, so a zero
+  // would be a division by zero and a negative would run it backwards.
+  s.pomoFocus = Math.round(inRange(s.pomoFocus, 1, 180, DEFAULTS.pomoFocus));
+  s.pomoShort = Math.round(inRange(s.pomoShort, 1, 60, DEFAULTS.pomoShort));
+  s.pomoLong = Math.round(inRange(s.pomoLong, 1, 120, DEFAULTS.pomoLong));
+
   // Bookmark shortcuts. An imported settings file is untrusted and this URL
   // becomes a navigation, so it is pinned to http(s) exactly as the wallpaper
   // and the feeds are. A binding that cannot be pressed is dropped rather than
