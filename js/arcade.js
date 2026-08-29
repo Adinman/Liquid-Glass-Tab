@@ -205,7 +205,10 @@ const overlayOpen = () =>
 /** A game returning true has consumed the key. */
 function onKey(e) {
   if (!game) return;
-  if (e.key === 'Escape' && overlayOpen()) return;
+  // An open panel owns the keyboard entirely, not just Escape. Typing in the
+  // settings search with a game running used to steer it: every key was added
+  // to the held set and forwarded, so searching for "was" drove the snake.
+  if (overlayOpen()) return;
   keys.add(e.key);
   if (game.key?.(e) === true) { e.preventDefault(); e.stopPropagation(); }
 }

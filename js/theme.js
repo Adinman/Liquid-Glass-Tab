@@ -630,9 +630,19 @@ function initVideoWallpaper() {
 
 /* ---------- pointer-tracked specular sheen ---------- */
 function trackSheen() {
-  document.addEventListener('pointermove', e => {
-    const panel = e.target.closest?.('.glass');
-    if (!panel) return;
+  // Coalesced to one write per frame. getBoundingClientRect() forces the layout
+  // to be up to date, and this ran on every raw pointermove — which on a
+  // high-polling-rate mouse is several hundred forced reads a second to move a
+  // gradient that can only be seen once per frame anyway.
+  let pending = null;
+  let frame = 0;
+  const flush = () => {
+    frame = 0;
+    const e = pending;
+    pending = null;
+    if (!e) return;
+    const panel = e.panel;
+    if (!panel.isConnected) return;
     let sheen = panel.querySelector(':scope > .sheen');
     if (!sheen) {
       sheen = document.createElement('div');
@@ -640,8 +650,14 @@ function trackSheen() {
       panel.prepend(sheen);
     }
     const r = panel.getBoundingClientRect();
-    sheen.style.setProperty('--mx', ((e.clientX - r.left) / r.width * 100).toFixed(1) + '%');
-    sheen.style.setProperty('--my', ((e.clientY - r.top) / r.height * 100).toFixed(1) + '%');
+    sheen.style.setProperty('--mx', ((e.x - r.left) / r.width * 100).toFixed(1) + '%');
+    sheen.style.setProperty('--my', ((e.y - r.top) / r.height * 100).toFixed(1) + '%');
+  };
+  document.addEventListener('pointermove', e => {
+    const panel = e.target.closest?.('.glass');
+    if (!panel) return;
+    pending = { panel, x: e.clientX, y: e.clientY };
+    if (!frame) frame = requestAnimationFrame(flush);
   }, { passive: true });
 }
 

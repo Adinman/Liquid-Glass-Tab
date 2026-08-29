@@ -460,7 +460,17 @@ export const CANON = { w: 1920, h: 1080 };
 
 /** The size of one widget's config entry, as a percentage, always in range. */
 export function widgetSize(cfg) {
-  const n = Number(cfg?.size);
+  // Number(null), Number('') and Number(false) are all 0, which is finite, so
+  // a missing size used to clamp to the minimum instead of falling back to the
+  // default. This is the coercion inRange() exists to avoid, so it is refused
+  // the same way here.
+  const raw = cfg?.size;
+  if (typeof raw !== 'number' && typeof raw !== 'string') return WIDGET_SIZE.default;
+  // An empty or blank string is the same trap one step further in: it is a
+  // string, so it passes the check above, and Number('') is 0 — finite, and
+  // therefore clamped to the minimum rather than falling back to the default.
+  if (typeof raw === 'string' && raw.trim() === '') return WIDGET_SIZE.default;
+  const n = Number(raw);
   if (!Number.isFinite(n)) return WIDGET_SIZE.default;
   return Math.min(WIDGET_SIZE.max, Math.max(WIDGET_SIZE.min, n));
 }

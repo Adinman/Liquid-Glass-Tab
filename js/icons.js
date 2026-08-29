@@ -32,11 +32,14 @@ function measure(url) {
   return new Promise(resolve => {
     const probe = new Image();
     let done = false;
-    const finish = v => { if (!done) { done = true; resolve(v); } };
+    let timer = 0;
+    const finish = v => { if (!done) { done = true; clearTimeout(timer); resolve(v); } };
     probe.onload = () => finish({ url, w: probe.naturalWidth || 0 });
     probe.onerror = () => finish(null);
     probe.src = url;
-    setTimeout(() => finish(null), 6000);
+    // Cleared on the way out: an icon that answers immediately otherwise leaves
+    // a 6s timer holding its closure, once per host looked up.
+    timer = setTimeout(() => finish(null), 6000);
   });
 }
 

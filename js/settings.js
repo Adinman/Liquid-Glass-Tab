@@ -182,7 +182,17 @@ function text(key, placeholder = '', after) {
 
 function number(key, min, max, after) {
   const i = el('input', { type: 'number', min, max, value: S[key] ?? 0 });
-  i.addEventListener('change', async () => { await set({ [key]: +i.value }); after?.(); });
+  i.addEventListener('change', async () => {
+    // min/max on the element are advisory: the browser will not stop a typed
+    // or pasted value, and `+''` for a cleared field is 0. That 0 was written
+    // straight through, so emptying "Max items" hid every bookmark in the dock
+    // and emptying "Headlines shown" emptied the news panel.
+    const raw = i.value.trim();
+    const v = raw === '' || !Number.isFinite(+raw) ? (S[key] ?? min) : clamp(+raw, min, max);
+    i.value = v;                       // show what was actually stored
+    await set({ [key]: v });
+    after?.();
+  });
   return i;
 }
 
@@ -607,11 +617,17 @@ const PANELS = {
   weather: () => {
     const results = el('div', { style: { marginTop: '6px' } });
     const input = el('input', { type: 'text', placeholder: 'City name…', style: { maxWidth: '100%', width: '100%' } });
+    // Enter can be pressed again before the first lookup returns, and the two
+    // do not come back in order. Without this the earlier city's matches can
+    // land under the later city's name.
+    let lookups = 0;
     input.addEventListener('keydown', async e => {
       if (e.key !== 'Enter' || !input.value.trim()) return;
+      const mine = ++lookups;
       results.innerHTML = '<div class="hint">Searching…</div>';
       try {
         const places = await searchPlaces(input.value.trim());
+        if (mine !== lookups) return;
         results.innerHTML = '';
         if (!places.length) { results.innerHTML = '<div class="hint">No matches.</div>'; return; }
         for (const p of places) {
@@ -1346,6 +1362,7 @@ function initSettingsDrag(panel) {
     const up = async () => {
       header.removeEventListener('pointermove', move);
       header.removeEventListener('pointerup', up);
+      header.removeEventListener('pointercancel', up);
       // The height was frozen on pointerdown so the panel would not resize
       // under the cursor mid-drag. Hand it back to the stylesheet now.
       panel.style.height = '';

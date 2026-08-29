@@ -123,7 +123,13 @@ export const pomodoro = {
           if (mode === 'focus') { done++; store.set('pomoDone', { d: new Date().toDateString(), n: done }); }
           stop();
           toast(mode === 'focus' ? 'Focus session done — take a break.' : 'Break over.');
-          try { new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAgD4AAAB9AAACABAAZGF0YQAAAAA=').play(); } catch {}
+          // play() rejects rather than throws when autoplay is blocked, so the
+          // try/catch around it never saw anything — it surfaced as an
+          // unhandled rejection in the console instead.
+          try {
+            new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAgD4AAAB9AAACABAAZGF0YQAAAAA=')
+              .play()?.catch(() => {});
+          } catch {}
           switchTo(mode === 'focus' ? 'short' : 'focus');
           return;
         }

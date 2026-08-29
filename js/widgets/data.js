@@ -280,6 +280,9 @@ export const crypto_ = {
     }
 
     load();
+    // Weather and news both publish this; without it the crypto panel is the
+    // one thing "clear cache" and the reload event leave showing stale prices.
+    panel._reload = load;
     timer = setInterval(load, 5 * 60e3);
     return () => clearInterval(timer);
   },

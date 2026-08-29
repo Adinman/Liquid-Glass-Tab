@@ -91,9 +91,12 @@ export function hasModifier(binding) {
 /** Why this binding cannot be used, or null if it can. */
 export function bindingProblem(binding) {
   if (!binding) return 'That key cannot be used on its own.';
-  const bare = !hasModifier(binding) && !binding.includes('shift+');
   const key = binding.split('+').pop();
-  if (bare && RESERVED[key]) return RESERVED[key];
+  // The shift carve-out exists for printable keys, where the character already
+  // encodes it. It has no business applying to the reserved list: the dock's
+  // arrow handling does not look at Shift, so Shift+ArrowUp would have been
+  // accepted here and then quietly lost to dock navigation.
+  if (!hasModifier(binding) && RESERVED[key]) return RESERVED[key];
   return null;
 }
 

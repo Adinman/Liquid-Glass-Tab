@@ -24,7 +24,10 @@
 /* Panels pinned to a screen corner. */
 :root[dir="rtl"] #hud { right: auto; left: 16px; }
 :root[dir="rtl"] #settings { right: auto; left: 14px; }
-:root[dir="rtl"] #spaces { right: auto; left: 14px; }
+/* #spaces already lives at the LEFT, so mirroring it means sending it right.
+   The rule used to set left again, which changed nothing — and since #hud
+   moves left in this direction, the two ended up stacked on each other. */
+:root[dir="rtl"] #spaces { left: auto; right: 14px; }
 
 /* The settings drawer slides in from whichever side it now lives on. */
 :root[dir="rtl"] #settings { animation-name: slide-in-rtl; }

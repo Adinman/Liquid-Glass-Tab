@@ -50,7 +50,12 @@ export function initPalette() {
   }
   function close() { open = false; overlay.hidden = true; }
 
+  // Which run this is. Incremented before anything is awaited, so a reply
+  // that comes back after a newer query can tell that it is stale.
+  let runs = 0;
+
   const search = debounce(async q => {
+    const run = ++runs;
     q = q.trim();
     const out = [];
 
@@ -85,6 +90,11 @@ export function initPalette() {
       });
     }
 
+    // Bookmarks, tabs and history are all awaited, and they do not come back in
+    // the order they were asked for. Without this a slow earlier query lands
+    // last and replaces the list for what is now on screen — you type another
+    // letter and the results go backwards.
+    if (run !== runs) return;
     results = out;
     sel = 0;
     paint();

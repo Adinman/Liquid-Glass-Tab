@@ -124,7 +124,11 @@ export const search = {
       // Test for the scheme, not a "http" prefix: `httpfoo.com` starts with
       // "http" but has no scheme, and passing it through unchanged made this a
       // relative navigation off the extension's own origin.
-      return /^https?:\/\//i.test(q) ? q : 'https://' + q;
+      if (/^https?:\/\//i.test(q)) return q;
+      // https for everything except localhost, where a dev server is almost
+      // never on TLS — `localhost:3000` used to become https://localhost:3000
+      // and fail to connect, which is the one address a developer types most.
+      return (/^localhost[:/]/i.test(q) ? 'http://' : 'https://') + q;
     };
 
     const go = q => {
@@ -145,13 +149,20 @@ export const search = {
       sugg.hidden = false;
     };
 
+    // Debouncing spaces the requests out; it does not make them come back in
+    // order. Without the epoch check a slow reply for "os" can arrive after the
+    // one for "oslo" and put the shorter query's suggestions under the longer
+    // one's text.
+    let suggRun = 0;
     const fetchSugg = debounce(async q => {
+      const mine = ++suggRun;
       if (!S.suggestions || q.length < 2) { items = []; renderSugg(); return; }
       try {
         const r = await fetch('https://duckduckgo.com/ac/?type=list&q=' + encodeURIComponent(q));
         const j = await r.json();
+        if (mine !== suggRun) return;
         items = (j[1] || []).slice(0, 6);
-      } catch { items = []; }
+      } catch { if (mine !== suggRun) return; items = []; }
       sel = -1;
       renderSugg();
     }, 160);

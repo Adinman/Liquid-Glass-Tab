@@ -696,14 +696,19 @@ export const lyrics = {
       }
     }
 
-    function syncOn() { if (!timer) timer = setInterval(frame, 100); }
+    function syncOn() { if (!gone && !timer) timer = setInterval(frame, 100); }
     function syncOff() { clearInterval(timer); timer = 0; }
 
-    const onTrack = e => load(e.detail);
+    // load() awaits a network fetch before it calls syncOn(). If the widget is
+    // torn down in that window, syncOff() has already run and the interval it
+    // then starts belongs to a panel that is no longer on the page — polling
+    // every 100ms for the life of the tab.
+    let gone = false;
+    const onTrack = e => { if (!gone) load(e.detail); };
     window.addEventListener('lgt:track', onTrack);
     if (sp.playback.track) load(sp.playback.track);
     else empty(t('Connect Spotify to see lyrics.'));
 
-    return () => { syncOff(); window.removeEventListener('lgt:track', onTrack); };
+    return () => { gone = true; syncOff(); window.removeEventListener('lgt:track', onTrack); };
   },
 };

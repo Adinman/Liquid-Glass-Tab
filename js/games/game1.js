@@ -197,12 +197,16 @@ export const game1 = {
     }
 
     function reveal(i) {
+      // Refuse first. This used to lay the mines and start the clock BEFORE
+      // noticing the cell was flagged, so a stray left-click on a flag spent
+      // the safe-first-click on a square that was never going to be opened —
+      // and started the timer for a game that had not begun.
+      if (b.flag[i] || b.open[i]) return;
       if (!laid) {
         layMines(b, i % lv.cols, (i / lv.cols) | 0);
         laid = true;
         started = performance.now();
       }
-      if (b.flag[i] || b.open[i]) return;
       if (b.mine[i]) {
         b.open[i] = 1;
         boomAt = i;

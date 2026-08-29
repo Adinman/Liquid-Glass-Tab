@@ -202,11 +202,17 @@
   /* No transform transition: the rAF loop in dock.js does its own easing, and
      a CSS transition on top of it fights the per-frame writes. */
   cursor: pointer;
-  will-change: transform;
   /* A drag is a press and a sweep across the row, which is also the gesture for
      selecting the labels it passes over. */
   user-select: none; -webkit-user-select: none;
 }
+/* Promoted only while something is actually going to move them. As a standing
+   declaration this gave every icon its own compositor layer for the life of the
+   tab — with a full dock and top sites that is 25-odd textures held in GPU
+   memory to animate a hover that may never happen. */
+#dock:hover .dock-item,
+#dock-zone[data-dragging] .dock-item { will-change: transform; }
+
 #dock-zone[data-edge="top"] .dock-item { transform-origin: top center; }
 /* Scale away from the edge the dock sits on, so a magnified icon grows into the
    screen rather than through the wall. */
