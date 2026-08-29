@@ -280,6 +280,7 @@ export const messages = {
   'Pick a date': '选择日期',
   'Another': '换一条',
   'Search or enter an address': '搜索或输入网址',
+  'That shortcut is no longer there.': '该快捷键已不存在。',
   'Week starts on': '一周从哪天开始',
   'Bookmark shortcuts': '书签快捷键',
   'Add': '添加',

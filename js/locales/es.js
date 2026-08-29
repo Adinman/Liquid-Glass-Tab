@@ -295,6 +295,7 @@ export const messages = {
   'Pick a date': 'Elige una fecha',
   'Another': 'Otra',
   'Search or enter an address': 'Busca o escribe una dirección',
+  'That shortcut is no longer there.': 'Ese atajo ya no existe.',
   'Week starts on': 'La semana empieza el',
   'Bookmark shortcuts': 'Atajos de marcadores',
   'Add': 'Añadir',

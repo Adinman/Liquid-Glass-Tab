@@ -282,6 +282,7 @@ export const messages = {
   'Pick a date': 'Выберите дату',
   'Another': 'Ещё',
   'Search or enter an address': 'Введите запрос или адрес',
+  'That shortcut is no longer there.': 'Этого сочетания больше нет.',
   'Week starts on': 'Неделя начинается с',
   'Bookmark shortcuts': 'Сочетания для закладок',
   'Add': 'Добавить',

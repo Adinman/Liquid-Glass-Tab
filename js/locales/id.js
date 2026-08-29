@@ -283,6 +283,7 @@ export const messages = {
   'Pick a date': 'Pilih tanggal',
   'Another': 'Lagi',
   'Search or enter an address': 'Telusuri atau masukkan alamat',
+  'That shortcut is no longer there.': 'Pintasan itu sudah tidak ada.',
   'Week starts on': 'Minggu dimulai pada',
   'Bookmark shortcuts': 'Pintasan markah',
   'Add': 'Tambah',

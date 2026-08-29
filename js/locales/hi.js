@@ -283,6 +283,7 @@ export const messages = {
   'Pick a date': 'तारीख़ चुनें',
   'Another': 'एक और',
   'Search or enter an address': 'खोजें या पता लिखें',
+  'That shortcut is no longer there.': 'वह शॉर्टकट अब मौजूद नहीं है।',
   'Week starts on': 'सप्ताह शुरू होता है',
   'Bookmark shortcuts': 'बुकमार्क शॉर्टकट',
   'Add': 'जोड़ें',

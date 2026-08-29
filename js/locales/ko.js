@@ -308,6 +308,7 @@ export const messages = {
   'Pick a date': '날짜를 고르세요',
   'Another': '다른 명언',
   'Search or enter an address': '검색하거나 주소를 입력하세요',
+  'That shortcut is no longer there.': '그 단축키는 이제 없어요.',
   'Week starts on': '한 주의 시작 요일',
   'Bookmark shortcuts': '북마크 단축키',
   'Add': '추가',

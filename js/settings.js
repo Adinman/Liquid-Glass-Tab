@@ -179,12 +179,19 @@ function keyBinder(action) {
 function bookmarkBinder(index) {
   return bindingChip({
     except: { bookmarkIndex: index },
-    read: () => S.bookmarkKeys[index]?.key || '',
-    overridden: () => true,
+    read: () => (S.bookmarkKeys || [])[index]?.key || '',
+    // No default to go back to, so ↺ would only duplicate what ✕ does.
+    overridden: () => false,
     write: async binding => {
-      const list = S.bookmarkKeys.slice();
+      const list = (S.bookmarkKeys || []).slice();
+      const entry = list[index];
+      // The row can disappear between the chip being built and a key being
+      // pressed: another tab writing settings reloads them here. Spreading
+      // `undefined` would have stored a binding with no URL behind it — a
+      // shortcut that does nothing and is then dropped on the next read.
+      if (!entry) { toast(t('That shortcut is no longer there.')); draw(); return; }
       if (binding === undefined || binding === '') list.splice(index, 1);
-      else list[index] = { ...list[index], key: binding };
+      else list[index] = { ...entry, key: binding };
       await set({ bookmarkKeys: list });
     },
   });
@@ -236,10 +243,14 @@ function bookmarkShortcuts() {
         return toast(t('That bookmark already has a row.'));
       }
       const opt = pick.selectedOptions[0];
-      // Added with no key: the row appears showing — and the chip is how you
-      // give it one, which is the same gesture as every other shortcut here.
       await set({ bookmarkKeys: [...(S.bookmarkKeys || []), { key: '', url, title: opt?.dataset.title || '' }] });
       draw();
+      // Straight into capture on the row just added, rather than making the
+      // user find it and click it. Adding a shortcut and giving it a key is
+      // one intention, and splitting it in two left a row sitting there
+      // unbound — which is exactly the state that used to get thrown away.
+      const rows = [...$('#settings').querySelectorAll('.key-cell .key-chip')];
+      rows[rows.length - 1]?.click();
     },
   });
   flatBookmarks().then(nodes => {

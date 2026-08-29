@@ -369,11 +369,20 @@ function sanitize(s) {
     const out = [];
     for (const b of src) {
       if (!b || typeof b !== 'object') continue;
-      if (!isHttpURL(b.url) || !isBindingShape(b.key) || !b.key) continue;
-      if (taken.has(b.key)) continue;
-      taken.add(b.key);
+      // The URL is the row. Without one there is nothing to open and nothing
+      // to show, so that is the only thing worth refusing outright.
+      if (!isHttpURL(b.url)) continue;
+      // An empty key is legal and means "added, waiting for a key" — which is
+      // what the drawer creates the moment you press Add, and what it shows as
+      // —. Refusing it here deleted the row out from under anyone who added a
+      // bookmark and then opened another tab before binding it.
+      const key = isBindingShape(b.key) ? String(b.key) : '';
+      // Only real bindings are deduped. Several rows can be waiting for a key
+      // at once, and they are not duplicates of each other.
+      if (key && taken.has(key)) continue;
+      if (key) taken.add(key);
       out.push({
-        key: String(b.key),
+        key,
         url: String(b.url),
         title: String(b.title ?? '').slice(0, 90),
       });
