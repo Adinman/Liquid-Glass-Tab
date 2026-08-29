@@ -216,11 +216,16 @@ export const calendar = {
     panel.append(el('header', {}, prev, label, next), grid);
 
     function draw() {
-      label.textContent = cursor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+      label.textContent = cursor.toLocaleDateString(uiLang(), { month: 'long', year: 'numeric' });
       grid.innerHTML = '';
-      for (const d of ['S', 'M', 'T', 'W', 'T', 'F', 'S']) grid.append(el('div', { class: 'hd', text: d }));
+      const ws = weekStart();
+      // The initials came from a hardcoded English list, which was wrong in
+      // every other language the interface speaks. Intl already knows them.
+      for (const d of weekdayInitials(ws)) grid.append(el('div', { class: 'hd', text: d }));
       const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
-      const start = first.getDay();
+      // How many blanks before the 1st, counted from whichever day the week
+      // starts on rather than always from Sunday.
+      const start = (first.getDay() - ws + 7) % 7;
       const days = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0).getDate();
       const prevDays = new Date(cursor.getFullYear(), cursor.getMonth(), 0).getDate();
       const today = new Date();
@@ -236,6 +241,47 @@ export const calendar = {
     return () => {};
   },
 };
+
+/** Which day the week starts on, 0 = Sunday.
+ *
+ *  'auto' asks Intl, which carries this per locale — firstDay is 1..7 with 7
+ *  meaning Sunday, so the modulo maps it onto the getDay() numbering. Older
+ *  engines expose it as a property rather than a method, and some expose
+ *  neither; Sunday is the fallback because that is what this was before the
+ *  setting existed, and a detection failure should not silently move anyone's
+ *  calendar. */
+/** The language the interface is actually in. applyDocumentLanguage keeps this
+ *  on the root, and it is what Intl should be told — passing undefined asks the
+ *  browser instead, which is a different question. */
+const uiLang = () => document.documentElement.lang || undefined;
+
+export function weekStart() {
+  if (S.weekStart === 'sun') return 0;
+  if (S.weekStart === 'mon') return 1;
+  try {
+    const loc = new Intl.Locale(uiLang() || navigator.language || 'en');
+    const info = typeof loc.getWeekInfo === 'function' ? loc.getWeekInfo() : loc.weekInfo;
+    if (info && Number.isFinite(info.firstDay)) return info.firstDay % 7;
+  } catch { /* no Intl.Locale, or no week info for this tag */ }
+  return 0;
+}
+
+/** Seven one-letter weekday labels in the active language, rotated to start on
+ *  `ws`. 7 January 2024 was a Sunday, which is all this needs to walk a week. */
+function weekdayInitials(ws) {
+  const out = [];
+  try {
+    // The interface language, not the browser's. Someone who set CGT to Russian
+    // on an English browser should not get Cyrillic month names beside English
+    // day initials.
+    const fmt = new Intl.DateTimeFormat(uiLang(), { weekday: 'narrow' });
+    for (let i = 0; i < 7; i++) out.push(fmt.format(new Date(2024, 0, 7 + ((ws + i) % 7))));
+  } catch {
+    const fallback = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+    for (let i = 0; i < 7; i++) out.push(fallback[(ws + i) % 7]);
+  }
+  return out;
+}
 
 /* ============================ WORLD CLOCKS ============================ */
 export const worldclock = {

@@ -343,6 +343,11 @@ export const DEFAULTS = {
   // Overrides the expensive settings without touching them, so turning it off
   // restores whatever the user had. See css/perf.css for what it covers.
   lowPerf: false,
+  // A shortcut that opens one bookmark. Not part of `keys`, because that map
+  // has a closed set of ids the sanitizer enforces, and these are arbitrary.
+  // The URL is stored rather than a bookmark id so the shortcut survives the
+  // bookmark being renamed, moved between folders, or re-created.
+  bookmarkKeys: [],         // [{ key, url, title }]
   // Only what the user has actually changed. An absent id means "still the
   // default", so a new shortcut added in a later version arrives bound rather
   // than blank for everyone who has ever opened this panel. See js/keys.js.
@@ -353,6 +358,10 @@ export const DEFAULTS = {
   temperatureUnit: 'celsius',
   windUnit: 'kmh',
   clock24: false,
+  // 'auto' asks Intl what this locale does. The calendar was Sunday-first for
+  // everyone, which is wrong in most of the world and in most of the languages
+  // this now ships in.
+  weekStart: 'auto',        // auto | sun | mon
   showSeconds: true,
   clockSize: 76,
 

@@ -130,6 +130,38 @@ export function conflictWith(stored, binding, exceptId) {
   return null;
 }
 
+/** The bookmark a keypress should open, or null. Same typing rule as actions:
+ *  a shortcut with no modifier stays out of the way while text is being typed. */
+export function bookmarkFor(list, e, typing) {
+  const pressed = bindingFrom(e);
+  if (!pressed) return null;
+  for (const b of list || []) {
+    if (b.key !== pressed) continue;
+    if (typing && !hasModifier(pressed)) return null;
+    return b;
+  }
+  return null;
+}
+
+/** Whatever already holds this binding, across BOTH sets, as something
+ *  sayable. Actions and bookmarks share one keyboard, so a conflict check that
+ *  only looked at one of them would let a bookmark quietly shadow Ctrl+K. */
+export function findConflict(stored, bookmarks, binding, except = {}) {
+  if (!binding) return null;
+  for (const a of ACTIONS) {
+    if (a.id !== except.actionId && resolve(stored, a.id) === binding) {
+      return { kind: 'action', label: a.label };
+    }
+  }
+  const list = bookmarks || [];
+  for (let i = 0; i < list.length; i++) {
+    if (i !== except.bookmarkIndex && list[i].key === binding) {
+      return { kind: 'bookmark', label: list[i].title || list[i].url };
+    }
+  }
+  return null;
+}
+
 const NAMES = {
   ' ': 'Space', ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→',
   Escape: 'Esc', Backspace: '⌫', Delete: 'Del', PageUp: 'PgUp', PageDown: 'PgDn',

@@ -1,7 +1,7 @@
 // Bootstrap: build the stage, wire shortcuts, own the drag layout.
 import { $, $$, el, clamp, toast, dropCache, openIncognito } from './util.js';
 import { WALLPAPERS, WIDGET_SIZE, WIDGET_SCALE, CANON, widgetSize } from './config.js';
-import { S, loadSettings, set, setWidget, onChange } from './state.js';
+import { S, loadSettings, set, setWidget, onChange, isHttpURL } from './state.js';
 import { initTheme, applyTheme, attachSheen } from './theme.js';
 import { initDock, applyDockSettings, renderDock } from './dock.js';
 import { initPalette } from './palette.js';
@@ -10,7 +10,7 @@ import { initSettings } from './settings.js';
 import { REGISTRY } from './widgets/index.js';
 import { initArcade } from './arcade.js';
 import { initI18n, onLocaleChange, translateDOM, t } from './i18n.js';
-import { ACTIONS, actionFor, keyLabel, resolve as resolveKey } from './keys.js';
+import { ACTIONS, actionFor, bookmarkFor, keyLabel, resolve as resolveKey } from './keys.js';
 
 const stage = () => $('#stage');
 const teardown = new Map();   // widget id -> cleanup fn
@@ -624,11 +624,23 @@ function initKeys() {
     const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName)
       || document.activeElement?.isContentEditable;
     const id = actionFor(S.keys, e, typing);
-    if (!id || !RUN[id]) return;
-    // Every one of these replaces whatever the key would otherwise do — `/`
-    // opens Chrome's quick-find, `,` types a comma into nothing.
-    e.preventDefault();
-    RUN[id]();
+    if (id && RUN[id]) {
+      // Every one of these replaces whatever the key would otherwise do — `/`
+      // opens Chrome's quick-find, `,` types a comma into nothing.
+      e.preventDefault();
+      RUN[id]();
+      return;
+    }
+    // Actions win a tie. They cannot actually tie, because the drawer refuses
+    // a binding either set already holds — but an imported settings file is
+    // not bound by the drawer, so the order here is the tie-break.
+    const bm = bookmarkFor(S.bookmarkKeys, e, typing);
+    // Re-checked at the point of navigation rather than trusted from storage,
+    // for the same reason sanitize checks it on the way in.
+    if (bm && isHttpURL(bm.url)) {
+      e.preventDefault();
+      location.href = bm.url;
+    }
   });
 }
 

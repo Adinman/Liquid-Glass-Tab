@@ -325,6 +325,14 @@ something nobody asked for takes that key away from everyone, while leaving it
 blank costs nothing and puts the choice with you. They show a **—** and do
 nothing at all until you give them one.
 
+**Any bookmark can go on a key too.** The same panel has a **Bookmark
+shortcuts** group: pick one, give it a key, and it opens from anywhere. The
+address is stored rather than the bookmark id, so renaming or moving it in
+Chrome does not break the shortcut — though deleting the bookmark leaves the
+shortcut pointing at the old address. Actions and bookmarks share one keyboard,
+so the conflict check spans both: neither can quietly shadow the other, and
+whichever holds a key is named when you try to take it.
+
 **Any shortcut can be left unbound**, not just those two. **✕** clears one,
 Backspace does the same while capturing, and **↺** puts the default back. An
 unbound action disappears from the <kbd>?</kbd> list too, because that list is
@@ -358,6 +366,18 @@ the other action dead.
 
 **<kbd>?</kbd> lists whatever is actually bound.** It used to print a fixed
 string, which was correct only for as long as the keys could not move.
+
+### The calendar knows which day your week starts on
+
+**⚙ → Data → Calendar → Week starts on.** Automatic, Sunday, or Monday.
+Automatic asks `Intl` what the interface language does, so Spanish and Russian
+start Monday while English and Korean start Sunday, without anyone choosing.
+
+It used to be Sunday for everyone — `first.getDay()` with no adjustment — which
+is wrong in most of the world and in most of the eighteen languages this ships
+in. The day initials were hardcoded English letters for all of them too; they
+come from `Intl` now, in the interface language rather than the browser's, so a
+Russian interface on an English browser gets ПВСЧПСВ and not SMTWTFS.
 
 ### Low performance mode
 

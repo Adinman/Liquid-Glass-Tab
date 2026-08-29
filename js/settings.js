@@ -1,5 +1,5 @@
 // The settings drawer. Every control writes straight to state and re-applies.
-import { $, el, toast, dropCache, debounce, clamp } from './util.js';
+import { $, el, toast, dropCache, debounce, clamp, hostOf } from './util.js';
 import { WALLPAPERS, WIDGET_META, DEFAULTS, HOLIDAYS,
          WIDGET_SIZE, PHOTOS, CLIPS, BG_PREFIX, bgThumb,
          ARCADE } from './config.js';
@@ -19,7 +19,7 @@ import { searchPlaces, detectPlace } from './widgets/index.js';
 import * as sp from './spotify.js';
 import { play, drawPreview } from './arcade.js';
 import { t, changeLocale, wanted } from './i18n.js';
-import { ACTIONS, DEFAULT_KEYS, bindingFrom, bindingProblem, conflictWith,
+import { ACTIONS, DEFAULT_KEYS, bindingFrom, bindingProblem, findConflict,
          keyLabel, resolve as resolveKey } from './keys.js';
 import { LOCALES } from './locales/index.js';
 
@@ -69,22 +69,29 @@ function toggle(key, after) {
  *  anything else — otherwise pressing the key you are trying to bind would
  *  also *do* the thing, and binding "open settings" would close the drawer you
  *  are standing in. stopPropagation is what keeps that from happening. */
-function keyBinder(action) {
+/** The chip that captures a keypress.
+ *
+ *  One interaction, two owners. `spec` says where the binding lives:
+ *  `read()` gives the current one, `write(b)` stores it (undefined meaning
+ *  "back to the default"), `overridden()` decides whether ↺ has anything to
+ *  do, and `except` tells the conflict check which entry to ignore — itself.
+ *  Actions and bookmarks share one keyboard, so the check has to span both. */
+function bindingChip(spec) {
   const chip = el('button', { class: 'btn key-chip', type: 'button' });
-  const clear = el('button', {
-    class: 'icon-btn key-clear', type: 'button', text: '✕',
-    title: t('Unbind this shortcut'),
-    onclick: async () => { await save(''); },
-  });
   const reset = el('button', {
     class: 'icon-btn key-reset', type: 'button', text: '↺',
     title: t('Back to the default'),
     onclick: async () => { await save(undefined); },
   });
+  const clear = el('button', {
+    class: 'icon-btn key-clear', type: 'button', text: '✕',
+    title: t('Unbind this shortcut'),
+    onclick: async () => { await save(''); },
+  });
   const wrap = el('div', { class: 'key-cell' }, chip, clear, reset);
 
   const paint = () => {
-    const b = resolveKey(S.keys, action.id);
+    const b = spec.read();
     chip.textContent = keyLabel(b);
     chip.classList.toggle('unset', !b);
     chip.title = t('Click, then press the keys you want');
@@ -93,7 +100,7 @@ function keyBinder(action) {
     // something to do: nothing to clear when the shortcut is already unbound,
     // nothing to reset when it is already the default.
     clear.style.visibility = b ? 'visible' : 'hidden';
-    reset.style.visibility = S.keys?.[action.id] === undefined ? 'hidden' : 'visible';
+    reset.style.visibility = spec.overridden() ? 'visible' : 'hidden';
   };
 
   let capturing = false;
@@ -106,13 +113,7 @@ function keyBinder(action) {
   };
 
   async function save(binding) {
-    const next = { ...S.keys };
-    // undefined means "back to the default", and a value equal to the default
-    // is the same thing — storing it would pin this action to today's default
-    // if the default ever changed.
-    if (binding === undefined || binding === DEFAULT_KEYS[action.id]) delete next[action.id];
-    else next[action.id] = binding;
-    await set({ keys: next });
+    await spec.write(binding);
     stop();
     draw();
   }
@@ -129,10 +130,12 @@ function keyBinder(action) {
     const problem = bindingProblem(b);
     if (problem) { toast(t(problem)); return; }        // stay in capture, try again
 
-    const clash = conflictWith(S.keys, b, action.id);
+    const clash = findConflict(S.keys, S.bookmarkKeys, b, spec.except);
     if (clash) {
-      const other = ACTIONS.find(x => x.id === clash);
-      toast(t('{key} is already {action}.', { key: keyLabel(b), action: t(other.label) }));
+      toast(t('{key} is already {action}.', {
+        key: keyLabel(b),
+        action: clash.kind === 'action' ? t(clash.label) : clash.label,
+      }));
       return;
     }
     await save(b);
@@ -152,6 +155,110 @@ function keyBinder(action) {
   paint();
   return wrap;
 }
+
+/** One of the built-in actions. */
+function keyBinder(action) {
+  return bindingChip({
+    except: { actionId: action.id },
+    read: () => resolveKey(S.keys, action.id),
+    overridden: () => S.keys?.[action.id] !== undefined,
+    write: async binding => {
+      const next = { ...S.keys };
+      // undefined means "back to the default", and a value equal to the default
+      // is the same thing — storing it would pin this action to today's default
+      // if the default ever changed.
+      if (binding === undefined || binding === DEFAULT_KEYS[action.id]) delete next[action.id];
+      else next[action.id] = binding;
+      await set({ keys: next });
+    },
+  });
+}
+
+/** One bookmark. There is no default to go back to, so ↺ removes the entry
+ *  outright — an unbound bookmark shortcut is just a row doing nothing. */
+function bookmarkBinder(index) {
+  return bindingChip({
+    except: { bookmarkIndex: index },
+    read: () => S.bookmarkKeys[index]?.key || '',
+    overridden: () => true,
+    write: async binding => {
+      const list = S.bookmarkKeys.slice();
+      if (binding === undefined || binding === '') list.splice(index, 1);
+      else list[index] = { ...list[index], key: binding };
+      await set({ bookmarkKeys: list });
+    },
+  });
+}
+
+/** Every bookmark with a URL, flattened, for the picker. Capped because a
+ *  heavy bookmark tree would otherwise build a select with thousands of
+ *  options every time this tab is drawn — including once per keystroke while
+ *  the settings search is running. */
+async function flatBookmarks(limit = 500) {
+  try {
+    const [root] = await chrome.bookmarks.getTree();
+    const out = [];
+    (function walk(nodes) {
+      for (const n of nodes) {
+        if (out.length >= limit) return;
+        if (n.url) { if (isHttpURL(n.url)) out.push(n); }
+        else if (n.children) walk(n.children);
+      }
+    })(root.children || []);
+    return out;
+  } catch { return []; }
+}
+
+/** The "put a bookmark on a key" group. */
+function bookmarkShortcuts() {
+  const wrap = el('div');
+  const list = S.bookmarkKeys || [];
+
+  for (let i = 0; i < list.length; i++) {
+    const b = list[i];
+    wrap.append(row(b.title || hostOf(b.url), bookmarkBinder(i)));
+  }
+  if (!list.length) {
+    wrap.append(el('div', { class: 'hint', style: { lineHeight: 1.55 } },
+      'No bookmark shortcuts yet. Pick one below and give it a key.'));
+  }
+
+  // The picker is filled asynchronously, so the row exists first and gains its
+  // options when the tree arrives — the tab must not wait on the bookmarks API.
+  const pick = el('select', { style: { maxWidth: '100%', flex: '1' } },
+    el('option', { value: '' }, t('Loading…')));
+  const add = el('button', {
+    class: 'btn', text: t('Add'), disabled: true,
+    onclick: async () => {
+      const url = pick.value;
+      if (!url) return;
+      if ((S.bookmarkKeys || []).some(b => b.url === url)) {
+        return toast(t('That bookmark already has a row.'));
+      }
+      const opt = pick.selectedOptions[0];
+      // Added with no key: the row appears showing — and the chip is how you
+      // give it one, which is the same gesture as every other shortcut here.
+      await set({ bookmarkKeys: [...(S.bookmarkKeys || []), { key: '', url, title: opt?.dataset.title || '' }] });
+      draw();
+    },
+  });
+  flatBookmarks().then(nodes => {
+    pick.innerHTML = '';
+    if (!nodes.length) {
+      pick.append(el('option', { value: '' }, t('No bookmarks found')));
+      return;
+    }
+    for (const n of nodes) {
+      pick.append(el('option', { value: n.url, dataset: { title: n.title || '' } },
+        (n.title || hostOf(n.url)).slice(0, 70)));
+    }
+    add.disabled = false;
+  });
+
+  wrap.append(el('div', { class: 'set-row' }, pick, add));
+  return wrap;
+}
+
 
 function slider(key, min, max, step = 1, after) {
   const out = el('span', { class: 'faint tabular', style: { width: '42px', textAlign: 'right', fontSize: '11px' } });
@@ -865,6 +972,10 @@ const PANELS = {
         return next ? next.date.toLocaleDateString(undefined,
           { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' }) : 'not set';
       })() }))),
+    group(t('Calendar'),
+      row(t('Week starts on'), select('weekStart', {
+        auto: 'Automatic', sun: 'Sunday', mon: 'Monday',
+      }, rebuild), 'Automatic follows the language the interface is set to.')),
     group(t('Crypto'),
       row('CoinGecko IDs', text('coins', 'bitcoin,ethereum,solana', rebuild), 'Comma separated, lowercase.')),
     group(t('Backup'),
@@ -946,6 +1057,17 @@ const PANELS = {
         class: 'btn', text: t('Reset shortcuts'),
         onclick: async () => { await set({ keys: {} }); draw(); toast(t('Shortcuts reset')); },
       })),
+    ),
+    group(t('Bookmark shortcuts'),
+      bookmarkShortcuts(),
+      el('div', { class: 'hint', style: { lineHeight: 1.55 } },
+        'Put any bookmark on a key. Give it a modifier — Ctrl or Alt — unless you '
+        + 'want it to fire from a bare letter, which will not work while you are '
+        + 'typing in a box. ✕ removes the row.'),
+      el('div', { class: 'hint', style: { lineHeight: 1.55 } },
+        'The address is remembered rather than the bookmark itself, so renaming '
+        + 'or moving it in Chrome does not break the shortcut — but deleting the '
+        + 'bookmark leaves the shortcut working on the old address.'),
     ),
   ],
 };

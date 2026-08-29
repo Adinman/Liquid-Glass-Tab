@@ -358,6 +358,30 @@ function sanitize(s) {
 
   s.lowPerf = !!s.lowPerf;
 
+  // Bookmark shortcuts. An imported settings file is untrusted and this URL
+  // becomes a navigation, so it is pinned to http(s) exactly as the wallpaper
+  // and the feeds are. A binding that cannot be pressed is dropped rather than
+  // kept, and duplicates are dropped rather than left to shadow each other —
+  // whichever came first wins, which is also what the drawer shows.
+  {
+    const src = Array.isArray(s.bookmarkKeys) ? s.bookmarkKeys : [];
+    const taken = new Set();
+    const out = [];
+    for (const b of src) {
+      if (!b || typeof b !== 'object') continue;
+      if (!isHttpURL(b.url) || !isBindingShape(b.key) || !b.key) continue;
+      if (taken.has(b.key)) continue;
+      taken.add(b.key);
+      out.push({
+        key: String(b.key),
+        url: String(b.url),
+        title: String(b.title ?? '').slice(0, 90),
+      });
+      if (out.length >= 40) break;
+    }
+    s.bookmarkKeys = out;
+  }
+
   // Shortcut overrides. Same closed-key-set treatment as the arcade records
   // above, and for the same reason: an imported settings file is untrusted, so
   // only ids that are really in ACTIONS survive and '__proto__' and friends
