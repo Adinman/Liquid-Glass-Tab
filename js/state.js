@@ -1,5 +1,5 @@
 // Settings state: load, patch, persist, notify.
-import { DEFAULTS, WIDGET_SIZE, PHOTOS, CLIPS, ARCADE, bundled } from './config.js';
+import { DEFAULTS, WIDGET_SIZE, PHOTOS, CLIPS, ARCADE, CURRENCIES, bundled } from './config.js';
 import { ACTIONS, isBindingShape } from './keys.js';
 import { LOCALES } from './locales/index.js';
 import { store } from './util.js';
@@ -357,6 +357,16 @@ function sanitize(s) {
   }
 
   s.lowPerf = !!s.lowPerf;
+
+  // Whole minutes, bounded. A zero would be a refetch every tick, which is a
+  // way to get an IP rate-limited by a free API rather than a preference.
+  s.weatherRefresh = Math.round(inRange(s.weatherRefresh, 1, 720, DEFAULTS.weatherRefresh));
+  s.newsRefresh = Math.round(inRange(s.newsRefresh, 1, 720, DEFAULTS.newsRefresh));
+  s.cryptoRefresh = Math.round(inRange(s.cryptoRefresh, 1, 720, DEFAULTS.cryptoRefresh));
+
+  // The code reaches Intl.NumberFormat, which throws on anything that is not a
+  // real currency — so it is checked against the table rather than trusted.
+  if (!CURRENCIES[s.cryptoCurrency]) s.cryptoCurrency = DEFAULTS.cryptoCurrency;
 
   // Whole minutes, and bounded. These divide the progress ring, so a zero
   // would be a division by zero and a negative would run it backwards.

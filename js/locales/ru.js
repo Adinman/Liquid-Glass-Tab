@@ -282,6 +282,8 @@ export const messages = {
   'Pick a date': 'Выберите дату',
   'Another': 'Ещё',
   'Search or enter an address': 'Введите запрос или адрес',
+  'Quoted in': 'В валюте',
+  'How often to refresh': 'Как часто обновлять',
   'Break': 'Перерыв',
   'Long': 'Длинный',
   'Focus session': 'Сеанс работы',

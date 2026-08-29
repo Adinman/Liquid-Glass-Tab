@@ -308,6 +308,8 @@ export const messages = {
   'Pick a date': '날짜를 고르세요',
   'Another': '다른 명언',
   'Search or enter an address': '검색하거나 주소를 입력하세요',
+  'Quoted in': '표시 통화',
+  'How often to refresh': '새로 고침 주기',
   'Break': '휴식',
   'Long': '긴 휴식',
   'Focus session': '집중 시간',

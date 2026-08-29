@@ -1,6 +1,6 @@
 // The settings drawer. Every control writes straight to state and re-applies.
 import { $, el, toast, dropCache, debounce, clamp, hostOf } from './util.js';
-import { WALLPAPERS, WIDGET_META, DEFAULTS, HOLIDAYS,
+import { WALLPAPERS, WIDGET_META, DEFAULTS, HOLIDAYS, CURRENCIES,
          WIDGET_SIZE, PHOTOS, CLIPS, BG_PREFIX, bgThumb,
          ARCADE } from './config.js';
 import { countdownTarget } from './widgets/core.js';
@@ -997,7 +997,18 @@ const PANELS = {
         auto: 'Automatic', sun: 'Sunday', mon: 'Monday',
       }, rebuild), 'Automatic follows the language the interface is set to.')),
     group(t('Crypto'),
-      row('CoinGecko IDs', text('coins', 'bitcoin,ethereum,solana', rebuild), 'Comma separated, lowercase.')),
+      row('CoinGecko IDs', text('coins', 'bitcoin,ethereum,solana', rebuild), 'Comma separated, lowercase.'),
+      row(t('Quoted in'), select('cryptoCurrency', CURRENCIES))),
+    group(t('How often to refresh'),
+      row(t('Weather'), number('weatherRefresh', 1, 720)),
+      row(t('News'), number('newsRefresh', 1, 720)),
+      row(t('Crypto'), number('cryptoRefresh', 1, 720)),
+      el('div', { class: 'hint', style: { lineHeight: 1.55 } },
+        'Minutes. This is also how long an answer is cached for, so a shorter '
+        + 'interval really does fetch more often rather than re-reading the same '
+        + 'reply. These are free public APIs — asking every minute all day is a '
+        + 'good way to get rate-limited.'),
+    ),
     group(t('Backup'),
       el('div', { class: 'row' },
         el('button', {

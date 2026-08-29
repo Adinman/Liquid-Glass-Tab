@@ -283,6 +283,8 @@ export const messages = {
   'Pick a date': 'तारीख़ चुनें',
   'Another': 'एक और',
   'Search or enter an address': 'खोजें या पता लिखें',
+  'Quoted in': 'किस मुद्रा में',
+  'How often to refresh': 'कितनी बार रीफ़्रेश करें',
   'Break': 'विराम',
   'Long': 'लंबा',
   'Focus session': 'फ़ोकस सत्र',

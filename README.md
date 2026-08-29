@@ -367,6 +367,29 @@ the other action dead.
 **<kbd>?</kbd> lists whatever is actually bound.** It used to print a fixed
 string, which was correct only for as long as the keys could not move.
 
+### Refresh rates, and prices in your own currency
+
+**⚙ → Data → How often to refresh.** Weather, news and crypto, in minutes.
+The number drives the cache TTL as well as the timer, which is the part that
+makes it real: a shorter interval that still read a fifteen-minute cache would
+just re-render the same answer more often. Changing it re-arms a widget already
+on screen — without that, turning the news down from ten minutes to one would
+do nothing until the widget happened to be rebuilt, which for most people is
+never.
+
+These are free public APIs. Asking every minute all day is a good way to get an
+IP rate-limited, which is why the setting says so and the floor is one minute
+rather than zero.
+
+**⚙ → Data → Crypto → Quoted in.** Twenty-eight currencies. It was USD in
+three places at once: the `vs_currencies` parameter, the field names CoinGecko
+answers with, and a hardcoded `'$'`. The symbol, its position and the number of
+decimal places now come from `Intl`, which is not something a literal dollar
+sign could have got right for the yen (¥64,231.5, no decimals) or the euro in
+Spanish (64.231,50 €, symbol last). The currency is part of the cache key too,
+or switching it would be answered from the previous one's cache and look like
+nothing happened.
+
 ### The focus timer is not fixed at 25/5/15
 
 **⚙ → Data → Focus timer.** Focus, short break and long break, in minutes.

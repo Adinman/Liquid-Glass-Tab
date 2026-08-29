@@ -1,8 +1,25 @@
 // Network-backed widgets: weather (Open-Meteo), news (RSS), crypto (CoinGecko).
 import { el, cachedFetch, relTime, toast, escapeHtml, hostOf } from '../util.js';
-import { S, set } from '../state.js';
+import { S, set, onChange } from '../state.js';
 import { head } from './core.js';
 import { t } from '../i18n.js';
+
+/** How often a widget refetches, in ms, from its own setting. */
+const refreshMs = (key, fallback) => Math.max(1, Math.round(S[key] ?? fallback)) * 60e3;
+
+/** A reload timer that follows its setting rather than being fixed at render.
+ *  Returns the teardown, so a widget's cleanup is still one expression.
+ *
+ *  Re-arming on change matters more than it looks: without it, turning the
+ *  news down from ten minutes to one would do nothing until the widget
+ *  happened to be rebuilt, which for most people is never. */
+function refreshTimer(key, fallback, load) {
+  let timer = 0;
+  const arm = () => { clearInterval(timer); timer = setInterval(load, refreshMs(key, fallback)); };
+  arm();
+  const off = onChange(keys => { if (keys.includes('*') || keys.includes(key)) arm(); });
+  return () => { clearInterval(timer); off(); };
+}
 
 /* ---------- WMO weather codes ---------- */
 const WMO = {
@@ -79,7 +96,6 @@ export const weather = {
     const refresh = el('button', { class: 'icon-btn', text: '⟳', title: t('Refresh'),
       onclick: () => load(true) });
     panel.append(head('Weather', refresh), body);
-    let timer;
 
     async function load(force = false) {
       body.innerHTML = '<div class="muted" style="font-size:13px">Loading…</div>';
@@ -107,7 +123,8 @@ export const weather = {
       });
 
       const key = `wx:${(+place.lat).toFixed(2)},${(+place.lon).toFixed(2)}:${unit}:${S.windUnit}`;
-      const { data, stale, error } = await cachedFetch(key, url, { ttl: force ? 0 : 15 * 60e3 });
+      const { data, stale, error } = await cachedFetch(key, url,
+        { ttl: force ? 0 : refreshMs('weatherRefresh', 15) });
       if (!data) {
         body.innerHTML = `<div class="muted" style="font-size:13px">Weather unavailable (${escapeHtml(error?.message || 'offline')})</div>`;
         return;
@@ -172,9 +189,8 @@ export const weather = {
     }
 
     load();
-    timer = setInterval(load, 15 * 60e3);
     panel._reload = load;
-    return () => clearInterval(timer);
+    return refreshTimer('weatherRefresh', 15, load);
   },
 };
 
@@ -209,7 +225,7 @@ export const news = {
     const refresh = el('button', { class: 'icon-btn', text: '⟳', title: t('Refresh'), onclick: () => load(true) });
     panel.append(head('News', refresh), tabs, list);
 
-    let all = [], filter = 'all', timer;
+    let all = [], filter = 'all';
 
     async function load(force = false) {
       const feeds = (S.feeds || []).filter(f => f.on);
@@ -218,7 +234,7 @@ export const news = {
 
       const results = await Promise.all(feeds.map(async f => {
         const { data } = await cachedFetch('news:' + f.id, f.url,
-          { ttl: force ? 0 : 10 * 60e3, parse: 'text' });
+          { ttl: force ? 0 : refreshMs('newsRefresh', 10), parse: 'text' });
         return data ? parseFeed(data, f.name) : [];
       }));
 
@@ -248,9 +264,8 @@ export const news = {
     }
 
     load();
-    timer = setInterval(load, 10 * 60e3);
     panel._reload = load;
-    return () => clearInterval(timer);
+    return refreshTimer('newsRefresh', 10, load);
   },
 };
 
@@ -260,22 +275,45 @@ export const crypto_ = {
   render(panel) {
     const list = el('div');
     panel.append(head('Markets', el('button', { class: 'icon-btn', text: '⟳', onclick: () => load(true) })), list);
-    let timer;
+
+    /** The price, in whatever currency is set. Intl knows the symbol, where it
+     *  goes and how many decimals the currency normally carries, which is not
+     *  something a hardcoded '$' could ever have got right for the yen or the
+     *  rupee. Four decimals for anything under five units, because a coin
+     *  priced at 0.0031 rounds to nothing at two. */
+    const money = (n, cur) => {
+      try {
+        return new Intl.NumberFormat(document.documentElement.lang || undefined, {
+          style: 'currency', currency: cur.toUpperCase(),
+          maximumFractionDigits: n < 5 ? 4 : 2,
+        }).format(n);
+      } catch {
+        return n.toLocaleString(undefined, { maximumFractionDigits: n < 5 ? 4 : 2 });
+      }
+    };
 
     async function load(force = false) {
       const ids = (S.coins || 'bitcoin').split(',').map(s => s.trim()).filter(Boolean).join(',');
-      const url = `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(ids)}&vs_currencies=usd&include_24hr_change=true`;
-      const { data } = await cachedFetch('crypto:' + ids, url, { ttl: force ? 0 : 5 * 60e3 });
+      const cur = S.cryptoCurrency || 'usd';
+      const url = `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(ids)}`
+        + `&vs_currencies=${encodeURIComponent(cur)}&include_24hr_change=true`;
+      // The currency is part of the key. Without it, switching currency would
+      // be answered from the cache of the previous one and appear to do nothing.
+      const { data } = await cachedFetch(`crypto:${ids}:${cur}`, url,
+        { ttl: force ? 0 : refreshMs('cryptoRefresh', 5) });
       list.innerHTML = '';
       if (!data) { list.innerHTML = '<div class="muted" style="font-size:13px">Prices unavailable.</div>'; return; }
       for (const [id, v] of Object.entries(data)) {
-        const ch = v.usd_24h_change ?? 0;
+        // CoinGecko names the fields after the currency asked for, so a coin it
+        // cannot quote in this one comes back without them rather than as zero.
+        const price = v[cur];
+        const ch = v[`${cur}_24h_change`] ?? 0;
         list.append(el('div', { class: 'cr-row' },
           el('span', { text: id.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) }),
           el('span', { class: 'row' },
-            el('span', { class: 'tabular', text: '$' + v.usd.toLocaleString(undefined, { maximumFractionDigits: v.usd < 5 ? 4 : 2 }) }),
+            el('span', { class: 'tabular', text: typeof price === 'number' ? money(price, cur) : '—' }),
             el('span', { class: 'tabular ' + (ch >= 0 ? 'up' : 'dn'), style: { fontSize: '11.5px', width: '56px', textAlign: 'right' },
-              text: (ch >= 0 ? '+' : '') + ch.toFixed(2) + '%' }))));
+              text: typeof price === 'number' ? (ch >= 0 ? '+' : '') + ch.toFixed(2) + '%' : '' }))));
       }
     }
 
@@ -283,7 +321,9 @@ export const crypto_ = {
     // Weather and news both publish this; without it the crypto panel is the
     // one thing "clear cache" and the reload event leave showing stale prices.
     panel._reload = load;
-    timer = setInterval(load, 5 * 60e3);
-    return () => clearInterval(timer);
+    // Also redraws when the currency changes, not only when the period does.
+    const offCur = onChange(keys => { if (keys.includes('*') || keys.includes('cryptoCurrency')) load(true); });
+    const offTimer = refreshTimer('cryptoRefresh', 5, load);
+    return () => { offTimer(); offCur(); };
   },
 };

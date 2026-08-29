@@ -283,6 +283,8 @@ export const messages = {
   'Pick a date': 'Pilih tanggal',
   'Another': 'Lagi',
   'Search or enter an address': 'Telusuri atau masukkan alamat',
+  'Quoted in': 'Dalam mata uang',
+  'How often to refresh': 'Seberapa sering menyegarkan',
   'Break': 'Istirahat',
   'Long': 'Panjang',
   'Focus session': 'Sesi fokus',

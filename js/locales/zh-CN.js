@@ -280,6 +280,8 @@ export const messages = {
   'Pick a date': '选择日期',
   'Another': '换一条',
   'Search or enter an address': '搜索或输入网址',
+  'Quoted in': '计价货币',
+  'How often to refresh': '刷新频率',
   'Break': '休息',
   'Long': '长休',
   'Focus session': '专注时长',

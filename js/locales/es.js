@@ -295,6 +295,8 @@ export const messages = {
   'Pick a date': 'Elige una fecha',
   'Another': 'Otra',
   'Search or enter an address': 'Busca o escribe una dirección',
+  'Quoted in': 'Cotizado en',
+  'How often to refresh': 'Frecuencia de actualización',
   'Break': 'Descanso',
   'Long': 'Largo',
   'Focus session': 'Sesión de concentración',

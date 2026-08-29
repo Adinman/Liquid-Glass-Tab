@@ -137,6 +137,23 @@ export const ARCADE = [
    uses the engine the user chose in Chrome. A hardcoded `?q=` URL anywhere in
    this extension is the exact thing the Web Store rejected 1.3.0 for. */
 
+/* What CoinGecko will quote in, kept to the ones worth offering rather than
+   the whole list. The code is sent to the API and also handed to
+   Intl.NumberFormat, which is what produces the symbol and the decimal places
+   — so a code that is not a real ISO 4217 currency would throw there, and
+   sanitize pins the setting to these keys for that reason. */
+export const CURRENCIES = {
+  usd: 'US dollar', eur: 'Euro', gbp: 'British pound', jpy: 'Japanese yen',
+  cny: 'Chinese yuan', inr: 'Indian rupee', krw: 'South Korean won',
+  rub: 'Russian ruble', brl: 'Brazilian real', cad: 'Canadian dollar',
+  aud: 'Australian dollar', chf: 'Swiss franc', mxn: 'Mexican peso',
+  idr: 'Indonesian rupiah', try: 'Turkish lira', zar: 'South African rand',
+  sek: 'Swedish krona', nok: 'Norwegian krone', pln: 'Polish zloty',
+  nzd: 'New Zealand dollar', sgd: 'Singapore dollar', hkd: 'Hong Kong dollar',
+  thb: 'Thai baht', php: 'Philippine peso', aed: 'UAE dirham',
+  ils: 'Israeli shekel', vnd: 'Vietnamese dong', ngn: 'Nigerian naira',
+};
+
 export const FEEDS = [
   { id: 'bbc',    name: 'BBC',        url: 'https://feeds.bbci.co.uk/news/world/rss.xml',      on: true },
   { id: 'hn',     name: 'Hacker News',url: 'https://hnrss.org/frontpage',                       on: true },
@@ -361,6 +378,15 @@ export const DEFAULTS = {
   // Minutes. 25/5/15 is one school of thought, not a law — 52/17 and 45/15
   // have their own followings, and the timer had all three baked in, down to
   // the numbers printed on its own buttons.
+  // Minutes between refetches, per widget. The cache TTL is driven from the
+  // same number: a shorter interval that still read a long-lived cache would
+  // just re-render the same data more often.
+  weatherRefresh: 15,
+  newsRefresh: 10,
+  cryptoRefresh: 5,
+  // What prices are quoted in. CoinGecko takes this as `vs_currencies` and
+  // answers with keys named after it, so it is not only a display choice.
+  cryptoCurrency: 'usd',
   pomoFocus: 25,
   pomoShort: 5,
   pomoLong: 15,
