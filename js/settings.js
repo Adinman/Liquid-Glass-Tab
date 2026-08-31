@@ -687,18 +687,6 @@ const PANELS = {
         'Nothing below is changed. These settings are overridden while the mode '
         + 'is on and come back exactly as you left them when you turn it off.'),
     ),
-    group(t('Unlocked mode'),
-      row(t('Unlock the ranges below'), toggle('glassUnlocked', relockGlass)),
-      el('div', { class: 'hint', style: { lineHeight: 1.55 } },
-        'Opens every slider below up to what the material will actually take, '
-        + 'rather than the range worth having. You can go all the way to '
-        + 'invisible — tint, blur, edge light and shadow at 0 — or to a panel '
-        + 'nothing shows through at all.'),
-      el('div', { class: 'hint', style: { lineHeight: 1.55 } },
-        'These apply to every panel, this drawer included, so at the far ends '
-        + 'the settings themselves go with them. The text stays where it is '
-        + 'either way, and turning this off brings anything out of range back.'),
-    ),
     group(t('Glass material'),
       // Sliders that currently do nothing look broken. Saying so costs one line
       // and is the difference between "this setting is dead" and "I turned this
@@ -721,6 +709,18 @@ const PANELS = {
         preset('Barely there', { blur: 8, saturation: 140, brightness: 102, tintAlpha: 4, edgeAlpha: 30, radius: 20, refract: 16 }),
         preset('Solid', { blur: 0, saturation: 100, brightness: 100, tintAlpha: 38, edgeAlpha: 20, radius: 18, refract: 0 }),
       )),
+    group(t('Unlocked mode'),
+      row(t('Unlock the slider ranges'), toggle('glassUnlocked', relockGlass)),
+      el('div', { class: 'hint', style: { lineHeight: 1.55 } },
+        'Opens every slider in Glass material up to what the material will '
+        + 'actually take, rather than the range worth having. You can go all '
+        + 'the way to invisible — tint, blur, edge light and shadow at 0 — or '
+        + 'to a panel nothing shows through at all.'),
+      el('div', { class: 'hint', style: { lineHeight: 1.55 } },
+        'These apply to every panel, this drawer included, so at the far ends '
+        + 'the settings themselves go with them. The text stays where it is '
+        + 'either way, and turning this off brings anything out of range back.'),
+    ),
   ],
 
   dock: () => [
