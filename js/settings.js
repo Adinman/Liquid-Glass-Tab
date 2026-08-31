@@ -711,15 +711,6 @@ const PANELS = {
       )),
     group(t('Unlocked mode'),
       row(t('Unlock the slider ranges'), toggle('glassUnlocked', relockGlass)),
-      el('div', { class: 'hint', style: { lineHeight: 1.55 } },
-        'Opens every slider in Glass material up to what the material will '
-        + 'actually take, rather than the range worth having. You can go all '
-        + 'the way to invisible — tint, blur, edge light and shadow at 0 — or '
-        + 'to a panel nothing shows through at all.'),
-      el('div', { class: 'hint', style: { lineHeight: 1.55 } },
-        'These apply to every panel, this drawer included, so at the far ends '
-        + 'the settings themselves go with them. The text stays where it is '
-        + 'either way, and turning this off brings anything out of range back.'),
     ),
   ],
 
