@@ -154,6 +154,38 @@ export const CURRENCIES = {
   ils: 'Israeli shekel', vnd: 'Vietnamese dong', ngn: 'Nigerian naira',
 };
 
+/* The glass material sliders, in the order they appear.
+
+   Two ranges each. `lo`/`hi` is the range worth having — wide enough to build
+   any look someone would actually want, narrow enough that dragging is
+   precise. `ulo`/`uhi` is what the CSS will genuinely take, opened up by
+   unlocked mode.
+
+   The unlocked pair is also what sanitize enforces, and that is the point of
+   the table: the widest a legitimate UI can produce is a fact about the
+   material, and having the drawer and the validator read it from the same
+   place is what stops one of them drifting into rejecting what the other
+   writes. Until this existed none of these were bounded on load at all — an
+   imported settings file could put anything in any of them, and they all end
+   up in a CSS custom property.
+
+   Every value is a plain number so `sanitize` can clamp without knowing what
+   any of them mean. */
+export const GLASS = [
+  { key: 'blur',       label: 'Backdrop blur', lo: 0,   hi: 40,  ulo: 0, uhi: 200, step: 1 },
+  { key: 'saturation', label: 'Saturation',    lo: 100, hi: 300, ulo: 0, uhi: 500, step: 5 },
+  { key: 'brightness', label: 'Brightness',    lo: 80,  hi: 140, ulo: 0, uhi: 300, step: 1 },
+  { key: 'tintAlpha',  label: 'Tint opacity',  lo: 0,   hi: 40,  ulo: 0, uhi: 100, step: 1,
+    // 100 is a fully opaque panel — the top of the range is "you cannot see
+    // through it at all", which is only reachable unlocked.
+    hint: 'At 100 the panel is solid and nothing shows through it.' },
+  { key: 'edgeAlpha',  label: 'Edge light',    lo: 0,   hi: 100, ulo: 0, uhi: 100, step: 1 },
+  { key: 'radius',     label: 'Corner radius', lo: 0,   hi: 48,  ulo: 0, uhi: 200, step: 1 },
+  { key: 'shadow',     label: 'Panel shadow',  lo: 0,   hi: 100, ulo: 0, uhi: 300, step: 1 },
+  { key: 'refract',    label: 'Refraction',    lo: 0,   hi: 120, ulo: 0, uhi: 400, step: 1,
+    hint: 'Bends the backdrop near panel edges. 0 turns it off for a flatter, faster look.' },
+];
+
 export const FEEDS = [
   { id: 'bbc',    name: 'BBC',        url: 'https://feeds.bbci.co.uk/news/world/rss.xml',      on: true },
   { id: 'hn',     name: 'Hacker News',url: 'https://hnrss.org/frontpage',                       on: true },
@@ -313,6 +345,10 @@ export const DEFAULTS = {
   // appearance
   scheme: 'dark',
   accent: '#7cc6ff',
+  // Panel drop shadow, as a percentage of the designed one. Its own setting
+  // because the bottom of the glass range was not otherwise reachable: tint,
+  // blur and edge light all go to 0 and the shadow stayed behind on its own.
+  shadow: 100,
   blur: 18,
   saturation: 180,
   brightness: 108,
@@ -354,9 +390,18 @@ export const DEFAULTS = {
   dockFolder: '1',      // '1' = bookmarks bar
   dockShowTopSites: false,
   dockMaxItems: 24,
+  // The two on-screen buttons. Kept as one setting each rather than one per
+  // place they appear: the gear is drawn both on the dock and in the corner
+  // HUD, and turning "the settings button" off while one of the two stayed on
+  // screen would read as the setting being broken.
+  showSettingsBtn: true,
+  showEditBtn: true,
 
   // behaviour
   widgetScaleMode: 'window',   // 'window' shrinks widgets to fit a small window, 'fixed' never does
+  // Alignment guides while dragging. A preference rather than a mode: it
+  // changes what a drag snaps to, never where a widget is allowed to end up.
+  snapGuides: true,
   // Overrides the expensive settings without touching them, so turning it off
   // restores whatever the user had. See css/perf.css for what it covers.
   lowPerf: false,

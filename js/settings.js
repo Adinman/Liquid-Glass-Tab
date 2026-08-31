@@ -1,6 +1,6 @@
 // The settings drawer. Every control writes straight to state and re-applies.
 import { $, el, toast, dropCache, debounce, clamp, hostOf } from './util.js';
-import { WALLPAPERS, WIDGET_META, DEFAULTS, HOLIDAYS, CURRENCIES,
+import { WALLPAPERS, WIDGET_META, DEFAULTS, HOLIDAYS, CURRENCIES, GLASS,
          WIDGET_SIZE, PHOTOS, CLIPS, BG_PREFIX, bgThumb,
          ARCADE } from './config.js';
 import { countdownTarget } from './widgets/core.js';
@@ -271,17 +271,52 @@ function bookmarkShortcuts() {
 }
 
 
+/** A slider, with the number beside it editable.
+ *
+ *  The number used to be a label. It is an input because a track a couple of
+ *  hundred pixels wide cannot express "exactly 137" on a range that runs to
+ *  500 — whole values in the middle are simply not reachable with a mouse.
+ *  Typing is also the only way to repeat a value you liked or to copy one
+ *  between two settings.
+ *
+ *  Both ends go through the same write, so they cannot disagree. */
 function slider(key, min, max, step = 1, after) {
-  const out = el('span', { class: 'faint tabular', style: { width: '42px', textAlign: 'right', fontSize: '11px' } });
   const inp = el('input', { type: 'range', min, max, step, value: S[key] });
-  const show = () => { out.textContent = inp.value; };
-  show();
-  inp.addEventListener('input', debounce(async () => {
-    show();
-    await set({ [key]: +inp.value });
+  const out = el('input', {
+    type: 'text', class: 'slider-num', spellcheck: false, inputMode: 'decimal',
+    value: S[key], 'aria-label': t('Value'),
+  });
+
+  // How many decimals the step implies, so a 0.05 step stores 1.3 rather than
+  // 1.3000000000000003 and then shows it back.
+  const places = (String(step).split('.')[1] || '').length;
+  const clean = v => clamp(+(+v).toFixed(places), min, max);
+
+  const write = debounce(async v => {
+    await set({ [key]: v });
     applyTheme(); after?.();
-  }, 40));
-  inp.addEventListener('input', show);
+  }, 40);
+
+  inp.addEventListener('input', () => {
+    out.value = inp.value;             // the box follows the drag immediately
+    write(clean(inp.value));           // the write is debounced, as before
+  });
+
+  // On change rather than on input: "12" on the way to "120" would otherwise
+  // be stored and applied for as long as it took to type the third character.
+  out.addEventListener('change', () => {
+    const raw = out.value.trim();
+    // Empty or unparseable means the edit was abandoned, so what is stored
+    // comes back — `+''` is 0, which would be a silent write of the minimum.
+    const v = raw === '' || !Number.isFinite(+raw) ? (S[key] ?? min) : clean(raw);
+    out.value = v;                     // show what was actually taken
+    inp.value = v;
+    write(v);
+  });
+  out.addEventListener('keydown', e => { if (e.key === 'Enter') out.blur(); });
+  // Replacing the value is then one gesture rather than select-all-then-type.
+  out.addEventListener('focus', () => out.select());
+
   return el('span', { class: 'row' }, inp, out);
 }
 
@@ -433,6 +468,54 @@ function arcadeGroup() {
 }
 
 /* ---------- tab bodies ---------- */
+/** Both buttons live in two different files, so the change is announced
+ *  rather than called: app.js owns the pair in the corner, dock.js the gear on
+ *  the dock itself. */
+const chromeChanged = () => {
+  renderDock();
+  window.dispatchEvent(new Event('lgt:chrome'));
+};
+
+/** Says how to get back in, naming the keys as they are actually bound right
+ *  now — both are rebindable, and printing the shipped defaults at someone who
+ *  has changed them is worse than saying nothing. */
+function buttonsHint() {
+  const ways = [];
+  const settingsKey = resolveKey(S.keys, 'settings');
+  const paletteKey = resolveKey(S.keys, 'palette');
+  if (settingsKey) ways.push(keyLabel(settingsKey));
+  if (paletteKey) ways.push(`${keyLabel(paletteKey)} \u2192 \u201cOpen settings\u201d`);
+  return 'The gear is drawn both on the dock and in the top corner; turning it '
+    + 'off hides both. The edit-mode button is the one in the corner.'
+    + (ways.length
+      ? ` You can still open settings with ${ways.join(' or with ')}.`
+      : ' Both shortcuts for it are currently unbound, so the Shortcuts tab is'
+        + ' worth a look before you hide it.');
+}
+
+/** Switching unlocked mode off brings the values back into the normal range.
+ *
+ *  A range input cannot show a value outside its own min/max: the track would
+ *  sit at one end while the setting said something else, which reads as the
+ *  slider being broken. Clamping is said out loud because it changes how the
+ *  page looks, and someone who has just turned a switch off is not expecting
+ *  their panels to change with it. */
+async function relockGlass() {
+  if (!S.glassUnlocked) {
+    const patch = {};
+    for (const g of GLASS) {
+      const v = clamp(S[g.key], g.lo, g.hi);
+      if (v !== S[g.key]) patch[g.key] = v;
+    }
+    if (Object.keys(patch).length) {
+      await set(patch);
+      applyTheme();
+      toast(t('Brought back into the normal range.'));
+    }
+  }
+  draw();                              // the sliders are rebuilt at the new range
+}
+
 const PANELS = {
   look: () => [
     group(t('Language'),
@@ -604,20 +687,30 @@ const PANELS = {
         'Nothing below is changed. These settings are overridden while the mode '
         + 'is on and come back exactly as you left them when you turn it off.'),
     ),
+    group(t('Unlocked mode'),
+      row(t('Unlock the ranges below'), toggle('glassUnlocked', relockGlass)),
+      el('div', { class: 'hint', style: { lineHeight: 1.55 } },
+        'Opens every slider below up to what the material will actually take, '
+        + 'rather than the range worth having. You can go all the way to '
+        + 'invisible — tint, blur, edge light and shadow at 0 — or to a panel '
+        + 'nothing shows through at all.'),
+      el('div', { class: 'hint', style: { lineHeight: 1.55 } },
+        'These apply to every panel, this drawer included, so at the far ends '
+        + 'the settings themselves go with them. The text stays where it is '
+        + 'either way, and turning this off brings anything out of range back.'),
+    ),
     group(t('Glass material'),
       // Sliders that currently do nothing look broken. Saying so costs one line
       // and is the difference between "this setting is dead" and "I turned this
       // off myself a minute ago".
       ...(S.lowPerf ? [el('div', { class: 'hint', style: { lineHeight: 1.55 } },
         t('Low performance mode is on, so these are not in effect right now.'))] : []),
-      row(t('Backdrop blur'), slider('blur', 0, 40, 1)),
-      row(t('Saturation'), slider('saturation', 100, 300, 5)),
-      row(t('Brightness'), slider('brightness', 80, 140, 1)),
-      row(t('Tint opacity'), slider('tintAlpha', 0, 40, 1)),
-      row(t('Edge light'), slider('edgeAlpha', 0, 100, 1)),
-      row(t('Corner radius'), slider('radius', 0, 48, 1)),
-      row(t('Refraction'), slider('refract', 0, 120, 1),
-        'Bends the backdrop near panel edges. 0 turns it off for a flatter, faster look.'),
+      // One row per entry, so the ranges the sliders offer and the ranges
+      // sanitize enforces are read from the same table.
+      ...GLASS.map(g => {
+        const [lo, hi] = S.glassUnlocked ? [g.ulo, g.uhi] : [g.lo, g.hi];
+        return row(t(g.label), slider(g.key, lo, hi, g.step), g.hint || null);
+      }),
       row(t('Pointer sheen'), toggle('sheen')),
     ),
     group(t('Presets'),
@@ -666,6 +759,11 @@ const PANELS = {
       row(t('Max items'), number('dockMaxItems', 4, 60, renderDock)),
       row(t('Append top sites'), toggle('dockShowTopSites', renderDock)),
     ),
+    group(t('Buttons'),
+      row(t('Settings button'), toggle('showSettingsBtn', chromeChanged)),
+      row(t('Edit mode button'), toggle('showEditBtn', chromeChanged)),
+      el('div', { class: 'hint', style: { lineHeight: 1.55 } }, buttonsHint()),
+    ),
     group(t('Source folder'), folderPicker()),
     group(t('Bulk import'), ...bulkImportControls()),
   ],
@@ -700,6 +798,12 @@ const PANELS = {
         });
         return sw;
       })(), 'Scales every widget down together when the window is too small for them. Never scales up.'),
+      row(t('Alignment guides'), toggle('snapGuides'),
+        'Lines a widget up with the others, and with the middle of the window, '
+        + 'while you drag it. It only pulls within a few pixels and never holds '
+        + 'on — keep moving and it lets go. Hold Shift while dragging to turn it '
+        + 'off for that one drag. Dropping a widget on the centre line also '
+        + 'makes it stay centred when the window changes size.'),
       row(t('Edit mode'), (() => {
         const b = el('button', { class: 'btn', text: 'Toggle drag mode',
           onclick: () => window.dispatchEvent(new Event('lgt:edit')) });

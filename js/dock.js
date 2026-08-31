@@ -160,7 +160,12 @@ export async function renderDock() {
   const addBtn = buildAction('+', 'Add bookmark', () => openBookmarkForm(addBtn));
   addBtn.classList.add('add');
   wrap.append(addBtn);
-  wrap.append(buildAction('⚙', 'Settings', () => window.dispatchEvent(new Event('lgt:settings'))));
+  // Hidden by choice, not taken away: the shortcut and the command palette
+  // both still open settings, so this tidies the dock rather than locking
+  // anyone out of it.
+  if (S.showSettingsBtn) {
+    wrap.append(buildAction('⚙', 'Settings', () => window.dispatchEvent(new Event('lgt:settings'))));
+  }
   attachSheen(dock());
   armDockKeyboard(focusedAt);    // the row was just rebuilt, so re-arm the tab stop
   invalidateDockAnim();          // item count/positions just changed

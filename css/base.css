@@ -18,7 +18,11 @@ html, body { height: 100%; margin: 0; }
   --edge-a: 0.55;
   --radius: 26px;
   --refract: 42;           /* displacement scale */
-  --shadow: 0 18px 50px rgba(0,0,0,.38);
+  /* Scaled by the Panel shadow slider. Kept as a multiplier on the designed
+     alpha rather than as a whole shadow written from JS, so the light scheme
+     below can carry its own colour and still follow the same control. */
+  --shadow-a: 1;
+  --shadow: 0 18px 50px rgba(0,0,0,calc(.38 * var(--shadow-a)));
 
   /* palette */
   --accent: #7cc6ff;
@@ -44,7 +48,7 @@ html, body { height: 100%; margin: 0; }
   --text: rgba(20,22,28,.95);
   --text-dim: rgba(20,22,28,.60);
   --text-faint: rgba(20,22,28,.35);
-  --shadow: 0 18px 50px rgba(20,22,40,.18);
+  --shadow: 0 18px 50px rgba(20,22,40,calc(.18 * var(--shadow-a)));
   color-scheme: light;
 }
 

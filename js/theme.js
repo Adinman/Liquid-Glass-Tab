@@ -298,6 +298,7 @@ export function applyTheme() {
   st.setProperty('--tint-a', (S.tintAlpha / 100).toFixed(3));
   st.setProperty('--edge-a', (S.edgeAlpha / 100).toFixed(3));
   st.setProperty('--radius', S.radius + 'px');
+  st.setProperty('--shadow-a', (S.shadow / 100).toFixed(3));
   st.setProperty('--accent', S.accent);
   st.setProperty('--dock-size', S.dockSize + 'px');
   st.setProperty('--dock-mag', S.dockMagnify);

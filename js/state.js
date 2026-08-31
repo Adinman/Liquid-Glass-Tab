@@ -1,5 +1,5 @@
 // Settings state: load, patch, persist, notify.
-import { DEFAULTS, WIDGET_SIZE, PHOTOS, CLIPS, ARCADE, CURRENCIES, bundled } from './config.js';
+import { DEFAULTS, WIDGET_SIZE, PHOTOS, CLIPS, ARCADE, CURRENCIES, GLASS, bundled } from './config.js';
 import { ACTIONS, isBindingShape } from './keys.js';
 import { LOCALES } from './locales/index.js';
 import { store } from './util.js';
@@ -357,6 +357,19 @@ function sanitize(s) {
   }
 
   s.lowPerf = !!s.lowPerf;
+  s.showSettingsBtn = !!s.showSettingsBtn;
+  s.snapGuides = !!s.snapGuides;
+  s.glassUnlocked = !!s.glassUnlocked;
+
+  // Every glass value ends up in a CSS custom property, and none of them were
+  // bounded here before — an imported file could carry anything. Bounded to
+  // the unlocked range rather than the normal one, because unlocked mode is a
+  // legitimate way to reach those values and clamping to the narrow range
+  // would quietly undo someone's settings on the next load.
+  for (const g of GLASS) {
+    s[g.key] = inRange(s[g.key], g.ulo, g.uhi, DEFAULTS[g.key]);
+  }
+  s.showEditBtn = !!s.showEditBtn;
 
   // Whole minutes, bounded. A zero would be a refetch every tick, which is a
   // way to get an IP rate-limited by a free API rather than a preference.

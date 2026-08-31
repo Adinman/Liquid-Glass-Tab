@@ -887,10 +887,24 @@ wallpaper or video.
 ### Glass tuning
 
 **⚙ → Glass** exposes the whole material: backdrop blur, saturation, brightness,
-tint opacity, edge light, corner radius, and **refraction** — an SVG
-displacement map that bends the backdrop near panel edges, which is what makes
-it read as thick glass rather than frosted plastic. Five presets included
+tint opacity, edge light, corner radius, panel shadow, and **refraction** — an
+SVG displacement map that bends the backdrop near panel edges, which is what
+makes it read as thick glass rather than frosted plastic. Five presets included
 (Signature, Frosted, Thick lens, Barely there, Solid).
+
+Every slider's number is editable: click it and type an exact value. A track a
+couple of hundred pixels wide cannot express "exactly 137" on a range that runs
+to 500, and typing is the only way to repeat a value or copy one between two
+settings.
+
+**Unlocked mode** opens each slider up from the range worth having to the range
+the material will actually take — blur to 200, saturation to 500, corner radius
+to 200. Both ends become reachable: tint, blur, edge light and shadow at 0 is a
+genuinely invisible panel with only its text and icons left, and tint at 100 is
+one nothing shows through at all. These apply to every panel, the settings
+drawer included, so at the far ends the drawer goes with them — the text stays
+put either way, and switching unlocked mode off brings anything out of range
+back and says so.
 
 Set refraction to 0 if you prefer a flatter look or want to save GPU. At 0 the
 SVG filter is taken out of the backdrop chain entirely rather than just having

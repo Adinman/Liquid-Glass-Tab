@@ -120,9 +120,14 @@ function sizeHandle(panel, id) {
 
   grip.addEventListener('dblclick', async e => {
     e.stopPropagation();
+    // setWidget updates S synchronously and only the trip to disk is deferred,
+    // so doing it first is what lets relayout() below see the new size and
+    // re-divide left/top by the zoom that goes with it. The other order
+    // measured against the size being replaced.
+    const written = setWidget(id, { size: WIDGET_SIZE.default });
     applySize(panel, WIDGET_SIZE.default);
     relayout();
-    await setWidget(id, { size: WIDGET_SIZE.default });
+    await written;
   });
 
   grip.addEventListener('pointerdown', e => {
@@ -144,8 +149,49 @@ function sizeHandle(panel, id) {
     // right edge only travels half the width it gains.
     const spread = panel.style.transform.includes('translateX') ? 2 : 1;
     const x0 = e.clientX, y0 = e.clientY;
-    let pct = Math.round(z0 * 100);
+    let pct = z0 * 100;
+
+    /* Where the panel actually sits, captured once so it can be held there.
+       A resize should grow the panel, not move it.
+
+       relayout() writes left/top in pixels pre-divided by the panel's zoom,
+       because a pixel offset is resolved in the panel's own zoomed space and
+       multiplied by that zoom again on the way to the screen. The division is
+       done with the STORED size, so the moment this drag changes the zoom the
+       offsets are stale by the ratio of the two and the panel travels
+       (newZoom / oldZoom) times its own offset — a widget 1300px down the page
+       grown to 150% was thrown 650px further down, then snapped back on
+       release when relayout() rewrote the offsets. Re-divide by the LIVE zoom
+       on every step instead.
+
+       Percentages are immune: measured in Chrome, `left:10%` renders at the
+       same pixel at any zoom while `left:80px` scales 1:1 with it. So a
+       centre-anchored `left:50%` is recognised and left alone rather than
+       converted to pixels, which would drop the centring. */
+    const startZ = zoomOf(panel);
+    const pxVal = v => (v || '').endsWith('px') ? parseFloat(v) : null;
+    const l0 = pxVal(panel.style.left), t0 = pxVal(panel.style.top);
+    const realL = l0 == null ? null : l0 * startZ;
+    const realT = t0 == null ? null : t0 * startZ;
+
+    // Kept off .dragging on purpose: that class also carries scale(1.03) and a
+    // z-index lift, which belong to a move and not to a resize. relayout()
+    // treats the two the same way, which is all that is needed here.
+    panel.classList.add('resizing');
     try { grip.setPointerCapture(e.pointerId); } catch {}
+
+    /* One write per frame. A high-polling-rate mouse delivers pointermove
+       several times per refresh, and every one of these invalidates layout for
+       the panel and for both counter-zoomed badges — work that is thrown away
+       by the next event before anything is painted. */
+    let frame = 0;
+    const paint = () => {
+      frame = 0;
+      applySize(panel, pct);
+      const z = zoomOf(panel) || 1;
+      if (realL != null) panel.style.left = (realL / z).toFixed(2) + 'px';
+      if (realT != null) panel.style.top = (realT / z).toFixed(2) + 'px';
+    };
 
     const move = ev => {
       // The zoom that puts the corner back under the pointer, taken across
@@ -154,17 +200,31 @@ function sizeHandle(panel, id) {
       // stored-size space, so the delta is divided back through the viewport
       // factor or the grip tracks the cursor at the wrong rate on a big screen.
       const dz = ((ev.clientX - x0) * spread + (ev.clientY - y0)) / (baseW + baseH) / vp;
-      pct = clamp(Math.round((z0 + dz) * 100), WIDGET_SIZE.min, WIDGET_SIZE.max);
-      applySize(panel, pct);
+      // Fractional while the drag is live, rounded only on release. Rounding
+      // here quantised the panel to whole percent, which on a 380px widget is
+      // a ~4px jump per step — the stair-stepping read as the resize being
+      // coarse rather than as the deliberate 1% granularity of the setting.
+      pct = clamp((z0 + dz) * 100, WIDGET_SIZE.min, WIDGET_SIZE.max);
+      if (!frame) frame = requestAnimationFrame(paint);
     };
     const up = async () => {
+      if (frame) { cancelAnimationFrame(frame); frame = 0; }
       grip.removeEventListener('pointermove', move);
       grip.removeEventListener('pointerup', up);
-      // Growing downward can run a panel under the dock or off the bottom.
-      // Nothing else re-clamps: a zoom change leaves the layout box alone, so
-      // the ResizeObserver never fires for it.
+      // Never removed before, so every resize left another one behind, each
+      // holding a stale `pct` from its own drag and each able to fire later.
+      grip.removeEventListener('pointercancel', up);
+      panel.classList.remove('resizing');
+
+      pct = clamp(Math.round(pct), WIDGET_SIZE.min, WIDGET_SIZE.max);
+      applySize(panel, pct);
+      // Before relayout, so the pass sees the size it is meant to measure
+      // against — S is updated synchronously and only the write is deferred.
+      const written = setWidget(id, { size: pct });
+      // Growing downward can run a panel under the dock or off the bottom, and
+      // this is also what puts left/top back on the layout's own terms.
       relayout();
-      await setWidget(id, { size: pct });
+      await written;
     };
     grip.addEventListener('pointermove', move);
     grip.addEventListener('pointerup', up);
@@ -318,7 +378,11 @@ function relayout() {
     return {
       el, id: el.dataset.id, w0, h0, centred, xPct,
       placed: el.dataset.placed === '1',
-      dragging: el.classList.contains('dragging'),
+      // Either kind of drag. A move owns left/top; a resize owns the zoom, and
+      // with it the pixel offsets that are divided by that zoom. Both have to
+      // be left alone until the pointer is released, or this pass re-applies
+      // the STORED size and snaps the panel back between two pointermoves.
+      dragging: el.classList.contains('dragging') || el.classList.contains('resizing'),
       aLeft, aTop, aRight: aLeft + w0, aBottom: aTop + h0,
       authDock: Math.max(60, vh - reserve),
     };
@@ -472,6 +536,104 @@ addEventListener('fullscreenchange', scheduleRelayout);
 function keepInView() { relayout(); }
 
 /* ---------------- drag layout ---------------- */
+/* ---------------- alignment guides ----------------
+
+   While a panel is being dragged, its left/centre/right and top/middle/bottom
+   are matched against the same lines on every other panel, and against the
+   middle of the window. The nearest match within SNAP_PX pulls the panel onto
+   it and draws a line there.
+
+   Deliberately soft, because a layout tool that decides where things go is
+   worse than no tool at all:
+
+     - the pull is only SNAP_PX wide, and is recomputed from the raw pointer
+       position on every single move. There is no captured "snapped" state to
+       break out of — move further than the threshold and the panel is simply
+       wherever the cursor is;
+     - holding Shift turns it off for the length of a drag;
+     - the whole thing is a setting, off in one click;
+     - nothing here ever moves a panel that is not being dragged, and nothing
+       is written to storage that was not already written by the drop.
+
+   A grid would be the other way to do this, and is the thing being avoided:
+   it constrains every position instead of offering the handful that are
+   actually meaningful. */
+const SNAP_PX = 6;
+
+let guides = null;
+function guideEls() {
+  if (guides) return guides;
+  // Built here rather than in newtab.html: the dev harness renders its own
+  // copy of the body, so markup added there has to be added twice and drifts.
+  const mk = cls => {
+    const g = el('div', { class: 'align-guide ' + cls, 'aria-hidden': 'true' });
+    document.body.append(g);
+    return g;
+  };
+  guides = { v: mk('v'), h: mk('h') };
+  return guides;
+}
+
+/** At most one line per axis; null hides that one. */
+function drawGuides(x, y) {
+  const g = guideEls();
+  // Only written when the value actually changes. This runs on every
+  // pointermove, and assigning a style the element already has still costs a
+  // style invalidation.
+  const line = (node, pos, prop) => {
+    if (pos == null) {
+      if (node.style.display !== 'none') node.style.display = 'none';
+      return;
+    }
+    const px = Math.round(pos) + 'px';
+    if (node.style.display !== 'block') node.style.display = 'block';
+    if (node.style[prop] !== px) node.style[prop] = px;
+  };
+  line(g.v, x, 'left');
+  line(g.h, y, 'top');
+}
+
+const hideGuides = () => { if (guides) drawGuides(null, null); };
+
+/** The lines a drag can snap to.
+ *
+ *  Measured once, at pointerdown: nothing else moves while a drag is running,
+ *  and re-reading every panel's rect on every pointermove would force a layout
+ *  per panel per event. getBoundingClientRect is right here rather than
+ *  offsetWidth — these are real screen positions, so the panels' own zoom has
+ *  to be in them. */
+function snapTargets(dragged) {
+  const vx = [{ pos: innerWidth / 2, mid: true }];
+  const hy = [{ pos: innerHeight / 2, mid: true }];
+  for (const p of $$('.widget')) {
+    if (p === dragged) continue;
+    const r = p.getBoundingClientRect();
+    if (!r.width || !r.height) continue;
+    vx.push({ pos: r.left }, { pos: r.left + r.width / 2 }, { pos: r.right });
+    hy.push({ pos: r.top }, { pos: r.top + r.height / 2 }, { pos: r.bottom });
+  }
+  return { vx, hy };
+}
+
+/** The nearest line within the threshold, or null.
+ *
+ *  `anchors` are the dragged panel's own three lines on that axis, in the
+ *  order start / centre / end. Ties keep the first found, and the middle of
+ *  the window is first in the list, so centring wins over an edge that merely
+ *  happens to sit in the same place. */
+function bestSnap(anchors, targets) {
+  let best = null;
+  for (const target of targets) {
+    for (let i = 0; i < anchors.length; i++) {
+      const d = target.pos - anchors[i];
+      if (Math.abs(d) <= SNAP_PX && (!best || Math.abs(d) < Math.abs(best.d))) {
+        best = { d, pos: target.pos, mid: !!target.mid, anchor: i };
+      }
+    }
+  }
+  return best;
+}
+
 function makeDraggable(panel, id) {
   panel.addEventListener('pointerdown', e => {
     const editing = document.documentElement.dataset.edit === 'on';
@@ -514,6 +676,12 @@ function makeDraggable(panel, id) {
     // viewport ones or the bounds are wrong by the size factor.
     const z = zoomOf(panel);
     const w = panel.offsetWidth * z, h = panel.offsetHeight * z;
+    // Taken before .dragging adds scale(1.03), so the lines are the panel's
+    // real edges rather than the lifted ones.
+    const targets = S.snapGuides ? snapTargets(panel) : { vx: [], hy: [] };
+    // Whether the drop landed the panel's own centre on the middle of the
+    // window, which is the one snap that means something after the drag ends.
+    let centreSnapped = false;
     panel.classList.add('dragging');
     try { panel.setPointerCapture(e.pointerId); } catch {}
 
@@ -522,8 +690,33 @@ function makeDraggable(panel, id) {
       // Dragging IS placing it, so this gets the full viewport — and matches
       // what relayout will allow once the drop is recorded as placed.
       const b = layoutBounds(w, h, true);
-      const x = clamp(ev.clientX - offX, b.minX, b.maxX);
-      const y = clamp(ev.clientY - offY, b.minY, b.maxY);
+      let x = clamp(ev.clientX - offX, b.minX, b.maxX);
+      let y = clamp(ev.clientY - offY, b.minY, b.maxY);
+
+      let gx = null, gy = null;
+      centreSnapped = false;
+      // Shift suspends the guides mid-drag, for when you want a panel a few
+      // pixels off a neighbour and the pull keeps taking it back.
+      if (S.snapGuides && !ev.shiftKey) {
+        const sx = bestSnap([x, x + w / 2, x + w], targets.vx);
+        if (sx) {
+          const nx = clamp(x + sx.d, b.minX, b.maxX);
+          // Only when the clamp left it alone. A guide drawn at a line the
+          // panel is not allowed to reach is a line it never touches.
+          if (Math.abs(nx - x - sx.d) < 0.5) {
+            x = nx;
+            gx = sx.pos;
+            centreSnapped = sx.mid && sx.anchor === 1;
+          }
+        }
+        const sy = bestSnap([y, y + h / 2, y + h], targets.hy);
+        if (sy) {
+          const ny = clamp(y + sy.d, b.minY, b.maxY);
+          if (Math.abs(ny - y - sy.d) < 0.5) { y = ny; gy = sy.pos; }
+        }
+      }
+      drawGuides(gx, gy);
+
       panel.style.left = (x / innerWidth * 100).toFixed(2) + '%';
       panel.style.top = (y / innerHeight * 100).toFixed(2) + '%';
     };
@@ -531,6 +724,7 @@ function makeDraggable(panel, id) {
       panel.removeEventListener('pointermove', move);
       panel.removeEventListener('pointerup', up);
       panel.classList.remove('dragging');
+      hideGuides();
       if (!moved) {
         // A click, not a drag. Put back exactly what was there and write
         // nothing — a panel you merely touched should be unchanged.
@@ -540,14 +734,23 @@ function makeDraggable(panel, id) {
         panel.dataset.placed = wasPlaced;
         return;
       }
+      // Dropped with its own centre on the middle of the window: give centre
+      // anchoring back, rather than leaving a panel that looks centred until
+      // the window is next resized and then drifts. A drag is what takes that
+      // anchoring away, so reaching for the centre guide is the only way to
+      // ask for it again — and it is unmistakably what the gesture meant.
+      if (centreSnapped) {
+        panel.style.left = '50%';
+        panel.style.transform = 'translateX(-50%)';
+      }
       panel.dataset.ay = parseFloat(panel.style.top);   // dropping it here sets a new intent
       panel.dataset.ax = parseFloat(panel.style.left);
-      panel.dataset.anchor = '';                       // a drag drops centre anchoring
+      panel.dataset.anchor = centreSnapped ? 'center' : '';
       panel.dataset.placed = '1';
       await setWidget(id, {
         x: parseFloat(panel.style.left),
         y: parseFloat(panel.style.top),
-        anchor: null,
+        anchor: centreSnapped ? 'center' : null,
         placed: true,
         // The viewport this was arranged in. Without it the percentages above
         // have no scale, and the gaps this position implies cannot be
@@ -644,9 +847,24 @@ function initKeys() {
   });
 }
 
+/** The floating buttons in the top corner, both of which can be turned off.
+ *
+ *  Lives here rather than in dock.js even though the setting sits on the Dock
+ *  tab: the gear appears twice, once on the dock and once up here, and hiding
+ *  only one of them would read as the setting not working. dock.js owns its
+ *  own copy; this owns these two. */
+function applyChrome() {
+  $('#btn-settings').hidden = !S.showSettingsBtn;
+  $('#btn-edit').hidden = !S.showEditBtn;
+}
+
 /* ---------------- app events ---------------- */
 function initEvents() {
   window.addEventListener('lgt:edit', toggleEdit);
+  // An event rather than a direct call: settings.js does not import this file,
+  // and adding that edge would make a cycle out of what is currently a line.
+  window.addEventListener('lgt:chrome', applyChrome);
+  applyChrome();
 
   $('#btn-edit').addEventListener('click', toggleEdit);
   $('#btn-settings').addEventListener('click', () => window.dispatchEvent(new Event('lgt:settings')));

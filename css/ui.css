@@ -223,6 +223,24 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px;
 /* Flip above when there isn't room below, so it never hangs off the screen. */
 .count-edit.above { top: auto; bottom: calc(100% + 6px); }
 .widget.editing { z-index: 5; }        /* float over neighbouring widgets */
+
+/* ---------- alignment guides ----------
+   One line per axis, only while a panel is being dragged. Fixed rather than
+   absolute so a line spans the window whatever the stage is doing, and
+   pointer-events:none so it can never intercept the drag that drew it.
+   z-index sits above .widget.dragging (40) and below the palette (50).
+
+   Its own colour rather than --accent: the accent is chosen to sit with the
+   wallpaper, which is the opposite of what a guide needs. The dark hairline
+   under the glow is what keeps it readable on a pale wallpaper. */
+.align-guide {
+  --guide: #ff375f;
+  position: fixed; display: none; z-index: 41; pointer-events: none;
+  background: var(--guide);
+  box-shadow: 0 0 0 .5px rgba(0, 0, 0, .45), 0 0 6px var(--guide);
+}
+.align-guide.v { top: 0; bottom: 0; width: 1px; }
+.align-guide.h { left: 0; right: 0; height: 1px; }
 .count-edit .chips { justify-content: center; margin-bottom: 4px; }
 .count-field {
   width: 100%; margin-top: 6px; padding: 7px 10px; font-size: 12.5px;
@@ -404,6 +422,24 @@ select.dp-field option { background: #1a1d28; color: #fff; }
   padding: 6px 9px; outline: 0; font-size: 12.5px; max-width: 168px; user-select: text; }
 .set-row select option { background: #1a1d28; }
 .set-row input[type=range] { max-width: 140px; }
+/* The number beside a slider. It is an input, not a label — click it and type
+   an exact value — but it has to keep reading as a value until you do, or a
+   column of sliders turns into a column of form fields. So: bare until it is
+   hovered or focused, and the standard text-field treatment above is undone
+   rather than inherited (it would otherwise arrive 168px wide, boxed, and
+   right up against the track). Written as `input.slider-num` so it outweighs
+   that rule instead of relying on order alone. */
+.set-row input.slider-num {
+  width: 46px; max-width: 46px; flex: 0 0 auto;
+  background: none; border: 1px solid transparent; border-radius: 7px;
+  padding: 2px 4px; text-align: right;
+  font-size: 11px; font-variant-numeric: tabular-nums;
+  color: var(--text-faint); cursor: text; transition: background .15s, color .15s;
+}
+.set-row input.slider-num:hover { background: hsl(0 0% 100% / .08); color: var(--text-dim); }
+.set-row input.slider-num:focus {
+  background: hsl(0 0% 100% / .12); border-color: var(--accent); color: var(--text);
+}
 .set-row input[type=color] { width: 34px; height: 26px; border: 0; background: none; padding: 0; cursor: pointer; }
 .switch { width: 42px; height: 24px; border-radius: 999px; background: hsl(0 0% 100% / .16);
   position: relative; cursor: pointer; transition: background .2s; flex: 0 0 auto; }
